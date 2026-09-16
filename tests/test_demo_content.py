@@ -34,3 +34,5 @@ def test_extraction_prompt_requires_concise_grounded_fact_text() -> None:
     assert "kindがcondition以外のfactではcondition_scopeをnull" in prompt
     assert "parent_action_fact_idはすべてnull" in prompt
     assert "原文の該当引用" in prompt
+    assert "異なるkindを一つのfactへまとめない" in prompt
+    assert "observation、condition、check_actionの別factとして漏れなく" in prompt

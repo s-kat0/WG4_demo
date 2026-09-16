@@ -63,7 +63,7 @@ def diagnostic_handler(handler: JobHandler) -> JobHandler:
 def live_settings(
     runtime_dir: Path,
     *,
-    reasoning_effort: Literal["none", "low"],
+    reasoning_effort: Literal["none", "low", "medium"],
     call_budget: int,
 ) -> Settings:
     base = settings_from_environment(runtime_dir=runtime_dir)
@@ -835,7 +835,7 @@ def full_v5(services: Services, session_id: str) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["extract", "smoke", "full"], required=True)
-    parser.add_argument("--reasoning-effort", choices=["none", "low"], required=True)
+    parser.add_argument("--reasoning-effort", choices=["none", "low", "medium"], required=True)
     parser.add_argument("--call-budget", type=int, required=True)
     parser.add_argument("--confirmed-external-limit", action="store_true")
     args = parser.parse_args()

@@ -36,7 +36,7 @@ uv run --locked --env-file .env streamlit run app.py
 
 - `OPENAI_API_KEY`: サーバー側だけで読む専用project key
 - `OPENAI_MODEL`: 検証済みの正確なモデルID。別モデルへ自動切替しない
-- `OPENAI_REASONING_EFFORT`: `low`を推奨初期値とするが、v5ではlive再測定が必要
+- `OPENAI_REASONING_EFFORT`: 講演用は`medium`を推奨。`low`は短時間・低コストだが、v5実測で必須fact種別を落とす場合があった
 - `DEMO_PASSWORD_HASH` / `ADMIN_PASSWORD_HASH`: 別々のArgon2idハッシュ
 - `DEMO_EXPIRES_AT`: timezone付きISO 8601
 - `APP_LLM_ENABLED`: 実送信を許すときだけ`true`

@@ -2,9 +2,10 @@
 
 ## 開始前
 
-- deploy commit、`uv.lock`、prompt=`wg4-prompts-v3`、seed=`wg4-demo-v2`を記録
+- deploy commit、`uv.lock`、prompt=`wg4-prompts-v9`、seed=`wg4-demo-v2`を記録
 - 独立ブラウザで参加者／管理者認証を確認
 - 専用OpenAIプロジェクトのモデル権限、強制停止型支出上限、残利用量を確認
+- `OPENAI_MODEL=gpt-5.6-luna`、`OPENAI_REASONING_EFFORT=low`を固定し、Dashboardの実上限以下で`GLOBAL_RPM=20`、`GLOBAL_TPM=200000`を初期候補として確認
 - Cloud台帳を有限枠だけ有効化
 - 30-session試験結果と当日の人数分割方針を確認
 - アプリ外の録画を「記録の再生」と分かる形で用意

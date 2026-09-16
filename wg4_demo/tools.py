@@ -14,7 +14,18 @@ from wg4_demo.graph import GraphService
 from wg4_demo.repository import Repository, canonical_json
 from wg4_demo.result_validation import ToolTrace
 from wg4_demo.retrieval import RetrievalService
-from wg4_demo.schemas import CauseStatus, ProposalOperation
+from wg4_demo.schemas import (
+    AddActionPrerequisiteToolOperation,
+    AddFactToolOperation,
+    CauseStatus,
+    ConditionScope,
+    FactDraft,
+    FactKind,
+    OperationType,
+    ProposalOperation,
+    RemoveFactToolOperation,
+    ToolProposalOperation,
+)
 
 
 @dataclass(slots=True)
@@ -90,6 +101,7 @@ async def get_context(
         {
             "knowledge_id": result.knowledge_id,
             "version": result.version,
+            "facts": result.facts,
             "nodes": result.nodes,
             "edges": result.edges,
         }
@@ -128,10 +140,15 @@ async def propose_update(
     context: RunContextWrapper[ToolRuntimeContext],
     target_id: str,
     base_version: int,
-    operations: list[ProposalOperation],
+    operations: list[ToolProposalOperation],
     reason: str,
 ) -> str:
-    """Stage an update proposal; this does not approve or publish it."""
+    """Stage one update proposal without approval or publication.
+
+    Use add_action_prerequisite when a new statement adds a requirement for an existing
+    check_action. Its parent_action_fact_id must be the raw fact_id of that action. Every new
+    fact must cite only evidence read in this operation.
+    """
     runtime = context.context
     runtime.before_tool("propose_update")
     if runtime.mode != "update":
@@ -142,12 +159,41 @@ async def propose_update(
         raise AuthorizationError("探索していない知識版へ更新案を作成できません。")
     item = runtime.repository.get_knowledge(runtime.workspace_id, target_id, base_version)
     allowed_segments = runtime.trace.evidence_ids | runtime.submitted_segment_ids
+    domain_operations = [
+        (
+            ProposalOperation(
+                operation=OperationType.ADD_FACT,
+                new_fact=FactDraft(
+                    kind=FactKind.CONDITION,
+                    text=operation.text,
+                    condition_scope=ConditionScope.ACTION_PREREQUISITE,
+                    parent_action_fact_id=operation.parent_action_fact_id,
+                    evidence=operation.evidence,
+                ),
+            )
+            if isinstance(operation, AddActionPrerequisiteToolOperation)
+            else (
+                ProposalOperation(operation=operation.operation, new_fact=operation.new_fact)
+                if isinstance(operation, AddFactToolOperation)
+                else ProposalOperation(
+                    operation=operation.operation,
+                    target_fact_id=operation.target_fact_id,
+                    new_fact=(
+                        None
+                        if isinstance(operation, RemoveFactToolOperation)
+                        else operation.new_fact
+                    ),
+                )
+            )
+        )
+        for operation in operations
+    ]
     proposal = runtime.repository.stage_proposal(
         runtime.workspace_id,
         action_id=runtime.action_id,
         target_item_id=target_id,
         base_version=base_version,
-        operations=operations,
+        operations=domain_operations,
         reason=reason,
         equipment=item.equipment,
         case_label=item.case_label,

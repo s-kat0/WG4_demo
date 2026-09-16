@@ -121,6 +121,38 @@ class ProposalOperation(StrictModel):
         return self
 
 
+class AddFactToolOperation(StrictModel):
+    operation: Literal[OperationType.ADD_FACT]
+    new_fact: FactDraft
+
+
+class AddActionPrerequisiteToolOperation(StrictModel):
+    operation: Literal["add_action_prerequisite"]
+    text: str = Field(min_length=1, max_length=200)
+    parent_action_fact_id: str
+    evidence: list[EvidenceDraft] = Field(min_length=1, max_length=4)
+
+
+class ReplaceFactToolOperation(StrictModel):
+    operation: Literal[OperationType.REPLACE_FACT]
+    target_fact_id: str
+    new_fact: FactDraft
+
+
+class RemoveFactToolOperation(StrictModel):
+    operation: Literal[OperationType.REMOVE_FACT]
+    target_fact_id: str
+
+
+ToolProposalOperation = Annotated[
+    AddFactToolOperation
+    | AddActionPrerequisiteToolOperation
+    | ReplaceFactToolOperation
+    | RemoveFactToolOperation,
+    Field(discriminator="operation"),
+]
+
+
 class UpdateDraft(StrictModel):
     target_id: str
     base_version: int = Field(ge=1)

@@ -38,9 +38,11 @@ uv run --locked --env-file .env streamlit run app.py
 実API送信には次の全条件が必要。
 
 1. `APP_LLM_ENABLED=true`
-2. `OPENAI_API_KEY`、正確な`OPENAI_MODEL`、timezone付き`DEMO_EXPIRES_AT`、確認済み`GLOBAL_TPM`が設定済み
+2. `OPENAI_API_KEY`、正確な`OPENAI_MODEL`、`OPENAI_REASONING_EFFORT`、timezone付き`DEMO_EXPIRES_AT`、確認済み`GLOBAL_TPM`が設定済み
 3. 管理者が専用OpenAIプロジェクトの強制停止型支出上限を確認
 4. 管理画面で有限call枠を追加し、利用台帳を明示的に有効化
+
+2026-09-16の実API検証では`OPENAI_MODEL=gpt-5.6-luna`、`OPENAI_REASONING_EFFORT=low`を採用した。主シナリオは47.6秒、18モデル呼出しで完走した。講演用の初期候補は`GLOBAL_RPM=20`、`GLOBAL_TPM=200000`、`MAX_CONCURRENT_LLM=3`。`GLOBAL_TPM`はLunaの公開Tier 1上限500,000 TPMより低いが、実際のOpenAIプロジェクトDashboardに表示される上限を当日確認し、それ以下に設定すること。
 
 台帳は初回・消失・認証世代変更時に停止状態、割当0から始まる。会話・知識・cacheを初期化しても使用済みcallは戻らない。送信後のtimeout／接続断は課金状態不明として枠を戻さず、自動再送しない。
 
@@ -103,6 +105,14 @@ liveテストは`RUN_LIVE_TESTS=1`、実設定、参加者パスワード、管�
 ```bash
 RUN_LIVE_TESTS=1 LIVE_TEST_PARTICIPANT_PASSWORD='...' \
   uv run --locked --env-file .env pytest -m live
+```
+
+ユーザーが外部Spend limitを確認済みの場合だけ、全主シナリオを一時DB・有限call枠で検証できる。実行結果にAPIキーや本文は出力しない。
+
+```bash
+RUN_LIVE_TESTS=1 uv run --locked --env-file .env python \
+  scripts/run_live_validation.py --mode full --reasoning-effort low \
+  --call-budget 24 --confirmed-external-limit
 ```
 
 ## 主な構成

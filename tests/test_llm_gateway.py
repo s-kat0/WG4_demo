@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
 from wg4_demo.auth import AuthService
 from wg4_demo.errors import IndeterminateError, ValidationFailure
@@ -121,6 +122,7 @@ async def test_payload_has_fixed_model_store_false_and_no_client_retry(
             "instructions": "extract strictly",
             "input": "input",
             "text_format": KnowledgeDraft,
+            "reasoning": {"effort": "low"},
             "max_output_tokens": 2048,
             "store": False,
             "parallel_tool_calls": False,
@@ -184,4 +186,34 @@ async def test_missing_parsed_output_is_not_repaired(
             input_text="input",
             output_type=KnowledgeDraft,
         )
+    assert len(client.parse_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_pydantic_parse_failure_is_a_validation_error(
+    settings: Settings, auth: AuthService, participant: SessionRecord
+) -> None:
+    with pytest.raises(ValidationError) as invalid:
+        KnowledgeDraft.model_validate({})
+    client = FakeClient(error=invalid.value)
+    gateway = LLMGateway(
+        settings,
+        enabled_ledger(settings, auth, participant),
+        client_factory=FakeFactory(client),
+        token_estimator=lambda text: len(text),
+    )
+
+    with pytest.raises(ValidationFailure) as exc_info:
+        await gateway.structured(
+            GatewayCallContext(
+                participant.id,
+                "pydantic-invalid-output",
+                datetime.now(UTC) + timedelta(seconds=10),
+            ),
+            instructions="extract",
+            input_text="input",
+            output_type=KnowledgeDraft,
+        )
+
+    assert exc_info.value.code == "structured_output_invalid"
     assert len(client.parse_calls) == 1

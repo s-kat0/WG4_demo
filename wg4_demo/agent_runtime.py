@@ -10,6 +10,9 @@ from typing import Any, cast
 
 from agents import (
     Agent,
+    MaxTurnsExceeded,
+    ModelBehaviorError,
+    ModelRefusalError,
     ModelRetrySettings,
     ModelSettings,
     RunConfig,
@@ -17,6 +20,7 @@ from agents import (
     set_tracing_disabled,
 )
 from agents.tool import Tool
+from openai.types.shared import Reasoning
 
 from wg4_demo.errors import ValidationFailure
 from wg4_demo.evidence import EvidenceService
@@ -38,6 +42,32 @@ from wg4_demo.settings import Settings
 from wg4_demo.tools import ALL_TOOLS, QA_TOOLS, ToolRuntimeContext
 
 set_tracing_disabled(True)
+
+
+def translate_agent_error(exc: BaseException) -> ValidationFailure:
+    if isinstance(exc, ModelRefusalError):
+        return ValidationFailure(
+            "モデルが回答を拒否したため結果を使用しません。",
+            code="agent_refusal",
+        )
+    if isinstance(exc, MaxTurnsExceeded):
+        return ValidationFailure(
+            "モデルの最大ターン数に達したため結果を使用しません。",
+            code="agent_turn_limit",
+        )
+    if isinstance(exc, ModelBehaviorError):
+        message = str(exc)
+        if message.startswith("Invalid JSON input for tool"):
+            code = "agent_tool_input_invalid"
+        elif "final output" in message or "parsing model output" in message:
+            code = "agent_output_invalid"
+        else:
+            code = "agent_model_behavior"
+        return ValidationFailure(
+            "モデル出力を検証できなかったため結果を使用しません。",
+            code=code,
+        )
+    raise TypeError("unsupported agent error")
 
 
 class PromptStore:
@@ -175,6 +205,8 @@ class AgentService:
             return self.validator.validate_answer(
                 tool_context.workspace_id, answer, tool_context.trace
             ), tool_context
+        except (MaxTurnsExceeded, ModelBehaviorError, ModelRefusalError) as exc:
+            raise translate_agent_error(exc) from exc
         finally:
             await client.close()
 
@@ -214,6 +246,8 @@ class AgentService:
             return self.repository.get_proposal(
                 tool_context.workspace_id, selection.proposal_id
             ), tool_context
+        except (MaxTurnsExceeded, ModelBehaviorError, ModelRefusalError) as exc:
+            raise translate_agent_error(exc) from exc
         finally:
             await client.close()
 
@@ -249,6 +283,7 @@ class AgentService:
         return ModelSettings(
             parallel_tool_calls=False,
             max_tokens=self.settings.max_output_tokens,
+            reasoning=Reasoning(effort=self.settings.openai_reasoning_effort),
             store=False,
             retry=ModelRetrySettings(max_retries=0),
             timeout=float(self.settings.request_timeout_seconds),

@@ -60,6 +60,7 @@ def main() -> None:
         st.caption("Cloud上の一時保存です。必要な結果はJSONで保存してください。")
         st.caption(
             f"モデル: {services.settings.openai_model or '未設定'} / "
+            f"推論: {services.settings.openai_reasoning_effort} / "
             f"KB改訂: {workspace.kb_revision} / 会話: {st.session_state.conversation_id[:8]}"
         )
         page = st.radio(

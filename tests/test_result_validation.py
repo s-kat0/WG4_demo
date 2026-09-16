@@ -49,5 +49,6 @@ def test_nonexistent_or_unread_evidence_rejects_entire_answer(
         calls=["search_knowledge", "get_context", "read_evidence"],
     )
 
-    with pytest.raises(ValidationFailure):
+    with pytest.raises(ValidationFailure) as exc_info:
         ResultValidator(repository).validate_answer(workspace.id, answer, trace)
+    assert exc_info.value.code == "validation_unread_evidence"

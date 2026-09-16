@@ -6,6 +6,7 @@ import os
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
@@ -20,6 +21,7 @@ class Settings(BaseModel):
     app_env: str
     openai_api_key: SecretStr | None = None
     openai_model: str | None = None
+    openai_reasoning_effort: Literal["none", "low", "medium", "high", "xhigh", "max"] = "low"
     demo_password_hash: SecretStr | None = None
     admin_password_hash: SecretStr | None = None
     auth_version: str | None = None
@@ -133,6 +135,7 @@ def settings_from_mapping(
         "app_env": raw("APP_ENV") or "local",
         "openai_api_key": raw("OPENAI_API_KEY"),
         "openai_model": raw("OPENAI_MODEL"),
+        "openai_reasoning_effort": raw("OPENAI_REASONING_EFFORT") or "low",
         "demo_password_hash": raw("DEMO_PASSWORD_HASH"),
         "admin_password_hash": raw("ADMIN_PASSWORD_HASH"),
         "auth_version": raw("AUTH_VERSION"),

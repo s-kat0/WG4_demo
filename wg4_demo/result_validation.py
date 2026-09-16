@@ -25,25 +25,37 @@ class ResultValidator:
         self, workspace_id: str, answer: AnswerSelection, trace: ToolTrace
     ) -> AnswerSelection:
         if trace.search_result is None or "search_knowledge" not in trace.calls:
-            raise ValidationFailure("検索が正常完了した証跡がありません。")
+            raise ValidationFailure(
+                "検索が正常完了した証跡がありません。",
+                code="validation_search_trace_missing",
+            )
         if answer.status == "insufficient_evidence":
             if trace.search_result.hits:
-                raise ValidationFailure("取得候補があるため、根拠なしとして扱えません。")
+                raise ValidationFailure(
+                    "取得候補があるため、根拠なしとして扱えません。",
+                    code="validation_false_no_evidence",
+                )
             return answer
         if answer.status == "candidates" and not answer.candidates:
-            raise ValidationFailure()
+            raise ValidationFailure(code="validation_candidate_missing")
         acquired = {(hit.knowledge_id, hit.version): hit for hit in trace.search_result.hits}
         for candidate in answer.candidates:
             key = (candidate.knowledge_id, candidate.version)
             if key not in acquired or key not in trace.context_versions:
-                raise ValidationFailure("取得していない知識・版が回答に含まれています。")
+                raise ValidationFailure(
+                    "取得していない知識・版が回答に含まれています。",
+                    code="validation_unacquired_knowledge",
+                )
             item = self.repository.get_knowledge(
                 workspace_id, candidate.knowledge_id, candidate.version
             )
             facts = {fact.id: fact for fact in item.facts}
             action = facts.get(candidate.action_fact_id)
             if action is None or action.kind is not FactKind.CHECK_ACTION:
-                raise ValidationFailure("確認行動ではないfactが候補に選ばれています。")
+                raise ValidationFailure(
+                    "確認行動ではないfactが候補に選ばれています。",
+                    code="validation_action_fact",
+                )
             required_conditions = {
                 fact.id
                 for fact in item.facts
@@ -52,9 +64,15 @@ class ResultValidator:
                 in {ConditionScope.CASE_CONTEXT, ConditionScope.ACTION_PREREQUISITE}
             }
             if set(candidate.condition_fact_ids) != required_conditions:
-                raise ValidationFailure("現行版の適用条件または行動前提が欠けています。")
+                raise ValidationFailure(
+                    "現行版の適用条件または行動前提が欠けています。",
+                    code="validation_condition_set",
+                )
             if not set(candidate.evidence_segment_ids).issubset(trace.evidence_ids):
-                raise ValidationFailure("実際に取得していない原文IDが含まれています。")
+                raise ValidationFailure(
+                    "実際に取得していない原文IDが含まれています。",
+                    code="validation_unread_evidence",
+                )
             necessary_evidence = {
                 ref.segment_id
                 for fact in item.facts
@@ -62,5 +80,8 @@ class ResultValidator:
                 for ref in fact.evidence_refs
             }
             if not necessary_evidence.issubset(set(candidate.evidence_segment_ids)):
-                raise ValidationFailure("候補の行動・条件を支える根拠が欠けています。")
+                raise ValidationFailure(
+                    "候補の行動・条件を支える根拠が欠けています。",
+                    code="validation_missing_evidence",
+                )
         return answer

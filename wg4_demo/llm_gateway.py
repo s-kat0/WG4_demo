@@ -16,9 +16,18 @@ from agents.items import ModelResponse, TResponseInputItem
 from agents.models.interface import ModelTracing
 from agents.models.openai_responses import OpenAIResponsesModel
 from agents.tool import Tool
-from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI, RateLimitError
+from openai import (
+    APIConnectionError,
+    APIResponseValidationError,
+    APIStatusError,
+    APITimeoutError,
+    AsyncOpenAI,
+    ContentFilterFinishReasonError,
+    LengthFinishReasonError,
+    RateLimitError,
+)
 from openai.types.responses import ResponsePromptParam, ResponseStreamEvent
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from wg4_demo.errors import AppError, ConfigurationError, IndeterminateError, ValidationFailure
 from wg4_demo.settings import Settings
@@ -86,6 +95,7 @@ class LLMGateway:
                     instructions=instructions,
                     input=input_text,
                     text_format=output_type,
+                    reasoning={"effort": self.settings.openai_reasoning_effort},
                     max_output_tokens=self.settings.max_output_tokens,
                     store=False,
                     parallel_tool_calls=False,
@@ -183,6 +193,28 @@ class LLMGateway:
         code = self._provider_code(exc)
         if code in {"project_spend_limit_exceeded", "organization_spend_limit_exceeded"}:
             return AppError(code, "外部の支出上限に達したためLLM機能を停止しました。", "llm")
+        if isinstance(exc, ValidationError):
+            return ValidationFailure(
+                "構造化出力がschemaに一致しないため結果を使用しません。",
+                code="structured_output_invalid",
+            )
+        if isinstance(exc, LengthFinishReasonError):
+            return AppError(
+                "model_incomplete",
+                "モデル出力が生成上限で未完了のため結果を使用しません。",
+                "llm",
+            )
+        if isinstance(exc, ContentFilterFinishReasonError):
+            return ValidationFailure(
+                "モデル出力が完了しなかったため結果を使用しません。",
+                code="model_content_filtered",
+            )
+        if isinstance(exc, APIResponseValidationError):
+            return AppError(
+                "provider_response_invalid",
+                "API応答を検証できなかったため結果を使用しません。",
+                "llm",
+            )
         if isinstance(exc, RateLimitError):
             return AppError("provider_rate_limit", "APIのレート上限に達しました。", "llm")
         if isinstance(exc, APIStatusError):

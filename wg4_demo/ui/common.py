@@ -44,7 +44,7 @@ def enqueue(services: Services, *, mode: str, payload: dict[str, Any]) -> JobRec
             "parallel_tool_calls": False,
             "max_output_tokens": services.settings.max_output_tokens,
         },
-        prompt_version="wg4-prompts-v3",
+        prompt_version="wg4-prompts-v9",
         schema_version="wg4-schema-v1",
         dedupe_key=new_dedupe_key(),
     )

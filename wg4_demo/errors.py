@@ -34,8 +34,13 @@ class AuthorizationError(AppError):
 
 
 class ValidationFailure(AppError):
-    def __init__(self, message: str = "結果を検証できなかったため、保存・表示しません。") -> None:
-        super().__init__("validation_failed", message, "validation")
+    def __init__(
+        self,
+        message: str = "結果を検証できなかったため、保存・表示しません。",
+        *,
+        code: str = "validation_failed",
+    ) -> None:
+        super().__init__(code, message, "validation")
 
 
 class SearchFailure(AppError):

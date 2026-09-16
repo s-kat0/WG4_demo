@@ -15,6 +15,7 @@ from wg4_demo.schemas import ConditionScope
 class GraphResult:
     knowledge_id: str
     version: int
+    facts: list[dict[str, object]]
     nodes: list[dict[str, str]]
     edges: list[dict[str, str]]
     dot: str
@@ -39,7 +40,27 @@ class GraphService:
             {"source": source, "target": target, "relation": data["relation"]}
             for source, target, data in subgraph.edges(data=True)
         ]
-        return GraphResult(item.id, item.version, nodes, edges, self._to_dot(subgraph))
+        facts: list[dict[str, object]] = [
+            {
+                "fact_id": fact.id,
+                "kind": fact.kind.value,
+                "text": fact.text,
+                "condition_scope": (
+                    fact.condition_scope.value if fact.condition_scope is not None else None
+                ),
+                "parent_action_fact_id": fact.parent_action_fact_id,
+                "evidence_segment_ids": [ref.segment_id for ref in fact.evidence_refs],
+            }
+            for fact in item.facts
+        ]
+        return GraphResult(
+            item.id,
+            item.version,
+            facts,
+            nodes,
+            edges,
+            self._to_dot(subgraph),
+        )
 
     def _build(self, item: KnowledgeRecord) -> nx.DiGraph:
         graph = nx.DiGraph()

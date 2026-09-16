@@ -5,8 +5,21 @@ from pathlib import Path
 from argon2 import PasswordHasher
 from streamlit.testing.v1 import AppTest
 
+from wg4_demo.schemas import (
+    CauseStatus,
+    ConditionScope,
+    EvidenceDraft,
+    FactDraft,
+    FactKind,
+    OperationType,
+    ProposalOperation,
+)
 
-def test_unauthenticated_app_shows_only_safe_login_surface(project_root: Path, monkeypatch) -> None:
+
+def test_unauthenticated_app_shows_only_safe_login_surface(
+    project_root: Path, monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
     for key in [
         "OPENAI_API_KEY",
         "OPENAI_MODEL",
@@ -25,9 +38,16 @@ def test_unauthenticated_app_shows_only_safe_login_surface(project_root: Path, m
     assert app.title[0].value == "現場知識をつなぐミニエージェント"
     assert any(widget.label == "共通パスワード" for widget in app.text_input)
     assert not app.download_button
+    from wg4_demo.ui.app import _services
+
+    _services().scheduler.stop()
+    _services.clear()
 
 
-def test_authenticated_navigation_keeps_api_disabled(project_root: Path, monkeypatch) -> None:
+def test_authenticated_navigation_keeps_api_disabled(
+    project_root: Path, monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
     hasher = PasswordHasher(memory_cost=19456, time_cost=2, parallelism=1)
     values = {
         "APP_ENV": "test",
@@ -59,3 +79,104 @@ def test_authenticated_navigation_keeps_api_disabled(project_root: Path, monkeyp
     assert not app.exception
     assert app.header[0].value == "2. 知識を確認"
     assert app.download_button
+
+    navigation = next(widget for widget in app.radio if widget.label == "画面")
+    navigation.set_value("更新案を確認")
+    app.run()
+    assert not app.exception
+    assert app.header[0].value == "4. 更新案を作成・確認"
+    assert any(expander.label == "この画面で行うこと" for expander in app.expander)
+    update_button = next(
+        button for button in app.button if button.label == "この発言から更新案を作る"
+    )
+    assert update_button.disabled is True
+    assert any(
+        "文書・経験を登録" in markdown.value
+        for markdown in app.markdown
+        if isinstance(markdown.value, str)
+    )
+    services = _services()
+    workspace_id = app.session_state["workspace_id"]
+    _, mapping = services.repository.register_source(
+        workspace_id,
+        title="UIテスト保全記録",
+        kind="document",
+        equipment="冷却器1",
+        case_label="事例1",
+        external_key="ui-pending-source",
+        segments=[
+            (
+                "ui-pending-p1",
+                "document",
+                "温度計交換後、出口温度表示が高め。別計器と照合した。原因は未特定。",
+            )
+        ],
+    )
+    segment_id = mapping["ui-pending-p1"]
+    operations = [
+        ProposalOperation(
+            operation=OperationType.ADD_FACT,
+            new_fact=FactDraft(
+                kind=FactKind.OBSERVATION,
+                text="出口温度表示が高め",
+                evidence=[EvidenceDraft(segment_id=segment_id, quote="出口温度表示が高め")],
+            ),
+        ),
+        ProposalOperation(
+            operation=OperationType.ADD_FACT,
+            new_fact=FactDraft(
+                kind=FactKind.CONDITION,
+                text="温度計交換後",
+                condition_scope=ConditionScope.CASE_CONTEXT,
+                evidence=[EvidenceDraft(segment_id=segment_id, quote="温度計交換後")],
+            ),
+        ),
+        ProposalOperation(
+            operation=OperationType.ADD_FACT,
+            new_fact=FactDraft(
+                kind=FactKind.CHECK_ACTION,
+                text="別計器との照合",
+                evidence=[EvidenceDraft(segment_id=segment_id, quote="別計器と照合した")],
+            ),
+        ),
+        ProposalOperation(
+            operation=OperationType.ADD_FACT,
+            new_fact=FactDraft(
+                kind=FactKind.CAUSE_STATUS,
+                text="原因は未特定",
+                evidence=[EvidenceDraft(segment_id=segment_id, quote="原因は未特定")],
+            ),
+        ),
+    ]
+    proposal = services.repository.stage_proposal(
+        workspace_id,
+        action_id="ui-pending-action",
+        target_item_id=None,
+        base_version=0,
+        operations=operations,
+        reason="UIで内容と根拠を確認する",
+        equipment="冷却器1",
+        case_label="事例1",
+        missing_fields=["照合結果"],
+        cause_status=CauseStatus.UNRESOLVED,
+        allowed_segment_ids={segment_id},
+    )
+    services.repository.publish_proposal(workspace_id, proposal.id)
+    app.run()
+
+    assert not app.exception
+    assert app.subheader[0].value == "いま行う：人の確認待ち"
+    assert any(expander.label == "合格基準を見る" for expander in app.expander)
+    assert any(expander.label == "原文の根拠を確認" for expander in app.expander)
+    assert any(
+        checkbox.label == "内容、factの種類、未確認事項、原文根拠を確認しました"
+        for checkbox in app.checkbox
+    )
+    approve_button = next(button for button in app.button if button.label == "確認してv1として承認")
+    assert approve_button.disabled is True
+    update_button = next(
+        button for button in app.button if button.label == "この発言から更新案を作る"
+    )
+    assert update_button.disabled is True
+    services.scheduler.stop()
+    _services.clear()

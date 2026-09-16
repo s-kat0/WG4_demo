@@ -63,6 +63,18 @@ def main() -> None:
             f"推論: {services.settings.openai_reasoning_effort} / "
             f"KB改訂: {workspace.kb_revision} / 会話: {st.session_state.conversation_id[:8]}"
         )
+        with st.expander("デモの操作順（画面の選び方）", expanded=True):
+            st.markdown(
+                """
+1. **文書・経験を登録**：抽出 → 追加質問 → 回答反映
+2. **更新案を確認**：最初のpending案を確認し、v1として承認
+3. **質問して使う**：v1を使って主質問に回答
+4. **更新案を確認**：新しい発言から更新案を作り、v2として承認
+5. **質問して使う**：「新しい会話」後に同じ質問を実行
+
+**知識を確認**は、承認済みの内容と原文根拠を途中確認するときに使います。
+                """
+            )
         page = st.radio(
             "画面",
             ["文書・経験を登録", "知識を確認", "質問して使う", "更新案を確認", "管理"],

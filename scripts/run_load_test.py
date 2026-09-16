@@ -16,7 +16,7 @@ from argon2 import PasswordHasher
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from wg4_demo.auth import AuthService
-from wg4_demo.jobs import JobService
+from wg4_demo.jobs import JobRecord, JobService
 from wg4_demo.repository import Repository
 from wg4_demo.scheduler import Scheduler
 from wg4_demo.schemas import JobState, Role
@@ -87,7 +87,7 @@ def main() -> int:
         active = 0
         maximum = 0
 
-        def fake_handler(job):
+        def fake_handler(job: JobRecord) -> tuple[str, dict[str, object]]:
             nonlocal active, maximum
             with lock:
                 active += 1

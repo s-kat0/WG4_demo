@@ -83,6 +83,14 @@ def draft() -> KnowledgeDraft:
     )
 
 
+def test_knowledge_draft_accepts_its_strict_json_round_trip() -> None:
+    expected = draft()
+
+    actual = KnowledgeDraft.model_validate_json(expected.model_dump_json())
+
+    assert actual == expected
+
+
 @pytest.mark.asyncio
 async def test_payload_has_fixed_model_store_false_and_no_client_retry(
     settings: Settings, auth: AuthService, participant: SessionRecord

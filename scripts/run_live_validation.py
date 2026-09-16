@@ -585,7 +585,7 @@ def full_v5(services: Services, session_id: str) -> dict[str, Any]:
         payload={"segments": document_segments},
     )
     validate_draft(extraction["draft"], document_segments)
-    draft = KnowledgeDraft.model_validate(extraction["draft"])
+    draft = KnowledgeDraft.model_validate_json(json.dumps(extraction["draft"], ensure_ascii=False))
     document_proposal = services.repository.stage_proposal(
         workspace.id,
         action_id=f"live-v5-document-proposal-{uuid4()}",

@@ -90,7 +90,7 @@ def _render_document_step(
     extracted = st.session_state.get("last_outcomes", {}).get("extract")
     if not extracted:
         return
-    draft = KnowledgeDraft.model_validate(extracted["draft"])
+    draft = KnowledgeDraft.model_validate_json(json.dumps(extracted["draft"], ensure_ascii=False))
     st.markdown("**抽出された未承認カード（原文を短く構造化）**")
     for fact in draft.facts:
         scope = f" / {fact.condition_scope.value}" if fact.condition_scope else ""

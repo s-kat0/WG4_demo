@@ -1,6 +1,6 @@
 # 検証報告
 
-更新日: 2026-09-16
+更新日: 2026-09-17
 
 ## 対象
 
@@ -21,19 +21,19 @@
 
 ## v5非課金検証
 
-2026-09-16にロック済み環境で実行した。
+2026-09-17にロック済み環境で再実行した。
 
 | コマンド | 結果 |
 |---|---|
 | `uv sync --locked` | 成功（116 packages resolved、110 checked） |
-| `uv run --locked pytest` | 57 passed、1 skipped |
+| `uv run --locked pytest` | 58 passed、1 skipped |
 | `uv run --locked ruff check .` | 成功 |
 | `uv run --locked ruff format --check .` | 成功（76 files already formatted） |
-| `uv run --locked mypy wg4_demo scripts/run_live_validation.py` | 成功（35 source files） |
+| `uv run --locked mypy wg4_demo scripts` | 成功（39 source files） |
 | `uv run --locked pip-audit` | 既知脆弱性0件 |
 | `uv run --locked python scripts/check_repository_safety.py` | 成功（94 tracked or addable files） |
-| `uv run --locked python scripts/run_load_test.py --sessions 30 --delay 0.05` | 30完了、0失敗、最大同時3、median 1.2481秒、p95 1.6390秒、外部API 0 |
-| `uv run --locked pytest --cov=wg4_demo --cov-report=term-missing:skip-covered` | 57 passed、1 skipped、総合72% |
+| `uv run --locked python scripts/run_load_test.py --sessions 30 --delay 0.05` | 30完了、0失敗、最大同時3、median 1.0534秒、p95 1.3490秒、外部API 0 |
+| `uv run --locked pytest --cov=wg4_demo --cov-report=term-missing:skip-covered` | 58 passed、1 skipped、総合72% |
 
 pytestのskip 1件は、`RUN_LIVE_TESTS=1`が明示されていない既存live gate。通常テストは外部APIを呼んでいない。
 
@@ -70,7 +70,9 @@ pytestのskip 1件は、`RUN_LIVE_TESTS=1`が明示されていない既存live 
 
 ## 実API
 
-v5 prompt `wg4-prompts-v13`、初期12件、二往復の聞き取り、A/B/Cを通した実APIテストは、この改修では実行していない。`scripts/run_live_validation.py --mode full`はv5 A/B/Cを実行するlive gateへ更新し、Ruffとmypyだけを確認した。実行には、明示的な許可、`RUN_LIVE_TESTS=1`、実設定、既存の有限利用台帳、外部支出上限確認が必要。
+2026-09-17に`gpt-5.6-luna`、reasoning `low`、最大30 call、同時実行1、SDK retry 0の条件で、v5 full検証を1回実行した。最初の文書抽出APIは完了したが、結果をDBのJSON payloadから`KnowledgeDraft`へ戻す箇所がPydanticのPython strict modeで正当なenum文字列を拒否し、`ValidationError`で停止した。固定結果や別モデルへ切り替えず、A/B/Cの後続処理と自動再送は行っていない。
+
+原因箇所は、保存JSONをJSON modeで厳格検証するよう修正した。同じ復元処理を使うStreamlit文書登録画面も修正し、JSON round-trip回帰テストを追加した。修正後の非課金テスト・静的検査・30 session負荷試験は成功している。修正後のv5 full実API再検証は、別の明示的な実行としてまだ行っていないため、A/B/Cの実API成功、所要時間、call数、token量は未確認。
 
 過去にprompt v12・旧v3フローで`gpt-5.6-luna`、reasoning `low`のローカル実API検証が成功しているが、その47.5秒・20 calls等をv5の実績へ流用しない。
 

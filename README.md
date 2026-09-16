@@ -42,7 +42,7 @@ uv run --locked --env-file .env streamlit run app.py
 3. 管理者が専用OpenAIプロジェクトの強制停止型支出上限を確認
 4. 管理画面で有限call枠を追加し、利用台帳を明示的に有効化
 
-2026-09-16の実API検証では`OPENAI_MODEL=gpt-5.6-luna`、`OPENAI_REASONING_EFFORT=low`を採用した。主シナリオは47.6秒、18モデル呼出しで完走した。講演用の初期候補は`GLOBAL_RPM=20`、`GLOBAL_TPM=200000`、`MAX_CONCURRENT_LLM=3`。`GLOBAL_TPM`はLunaの公開Tier 1上限500,000 TPMより低いが、実際のOpenAIプロジェクトDashboardに表示される上限を当日確認し、それ以下に設定すること。
+2026-09-16の実API検証では`OPENAI_MODEL=gpt-5.6-luna`、`OPENAI_REASONING_EFFORT=low`を採用した。主シナリオは47.6秒、20モデル呼出しで完走した。約30人の講演用の推奨初期値は`GLOBAL_RPM=60`、`GLOBAL_TPM=200000`、`MAX_CONCURRENT_LLM=3`。いずれもLunaの公開Tier 1上限（500 RPM、500,000 TPM）より低いが、実際のOpenAIプロジェクトDashboardに表示される上限を当日確認し、それ以下に設定すること。
 
 台帳は初回・消失・認証世代変更時に停止状態、割当0から始まる。会話・知識・cacheを初期化しても使用済みcallは戻らない。送信後のtimeout／接続断は課金状態不明として枠を戻さず、自動再送しない。
 

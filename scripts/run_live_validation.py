@@ -29,6 +29,7 @@ from wg4_demo.jobs import JobRecord
 from wg4_demo.schemas import (
     TERMINAL_JOB_STATES,
     CauseStatus,
+    ConditionScope,
     FactKind,
     JobState,
     KnowledgeDraft,
@@ -516,6 +517,31 @@ def _v5_draft_payload(item: Any) -> dict[str, Any]:
     }
 
 
+def validate_v5_interview_supplement(
+    item: Any, *, reason_segment_id: str, scope_segment_id: str
+) -> None:
+    reason_fact = any(
+        fact.kind is FactKind.DECISION_REASON
+        and reason_segment_id in {ref.segment_id for ref in fact.evidence_refs}
+        for fact in item.facts
+    )
+    scope_fact = any(
+        (
+            fact.kind is FactKind.EXCEPTION
+            or (
+                fact.kind is FactKind.CONDITION
+                and fact.condition_scope is ConditionScope.APPLICABILITY
+            )
+        )
+        and scope_segment_id in {ref.segment_id for ref in fact.evidence_refs}
+        for fact in item.facts
+    )
+    if not reason_fact or not scope_fact:
+        raise RuntimeError(
+            "v5 interview supplement omitted grounded decision reason or applicability scope"
+        )
+
+
 def _v5_comparison(
     services: Services,
     *,
@@ -529,8 +555,9 @@ def _v5_comparison(
     state = services.conversations.prepare_turn(
         workspace_id, conversation, question, selected_knowledge_id=item.id
     )
-    consultation = state.model_dump(mode="json")
-    consultation["explicit_selected_knowledge_id"] = item.id
+    consultation = services.conversations.payload_for_turn(
+        state, explicit_selected_knowledge_id=item.id
+    )
     services.repository.append_message(workspace_id, conversation, role="user", text=question)
     return run_job(
         services,
@@ -648,8 +675,6 @@ def full_v5(services: Services, session_id: str) -> dict[str, Any]:
         mode="interview",
         payload={"draft": _v5_draft_payload(item), "statements": statements},
     )
-    if not any(term in first_question["question"] for term in ("理由", "なぜ", "考え")):
-        raise RuntimeError("v5 interview did not advance to the decision reason")
     _, reason_mapping = services.repository.register_source(
         workspace.id,
         title="聞き取り記録1（理由）",
@@ -738,6 +763,11 @@ def full_v5(services: Services, session_id: str) -> dict[str, Any]:
     if supplement_approval.after_version != 2:
         raise RuntimeError("v5 interview supplement did not create v2")
     item = services.repository.get_knowledge(workspace.id, item.id)
+    validate_v5_interview_supplement(
+        item,
+        reason_segment_id=reason_ids[1],
+        scope_segment_id=scope_ids[1],
+    )
     answer_b, timings["qa_b"] = _v5_comparison(
         services,
         session_id=session_id,

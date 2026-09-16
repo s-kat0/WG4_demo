@@ -211,7 +211,12 @@ def _render_interview_step(services: Services, demo: dict[str, Any], item: Knowl
             else demo["interview"]["scope_reply"]
         )
         with st.form(f"interview-reply-{answer_count}"):
-            answer = st.text_area("本人役の回答", value=default_reply, max_chars=1500)
+            answer = st.text_area(
+                "本人役の回答（質問に合うよう編集）",
+                value=default_reply,
+                max_chars=1500,
+                help="入力済み回答例は進行補助です。LLMの質問内容と合わない場合は編集してください。",
+            )
             reply = st.form_submit_button(
                 "回答して次の質問へ（APIを使用）",
                 disabled=active_job_exists(services),
@@ -336,6 +341,9 @@ def _enqueue_comparison(
         question,
         selected_knowledge_id=item.id,
     )
+    consultation = services.conversations.payload_for_turn(
+        state, explicit_selected_knowledge_id=item.id
+    )
     services.repository.append_message(
         st.session_state.workspace_id,
         conversation_id,
@@ -347,7 +355,7 @@ def _enqueue_comparison(
         mode="qa",
         payload={
             "question": question,
-            "consultation": state.model_dump(mode="json"),
+            "consultation": consultation,
             "comparison_stage": stage,
             "empty_history": True,
             "target_item_id": item.id,

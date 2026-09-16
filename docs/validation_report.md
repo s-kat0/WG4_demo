@@ -26,14 +26,14 @@
 | コマンド | 結果 |
 |---|---|
 | `uv sync --locked` | 成功（116 packages resolved、110 checked） |
-| `uv run --locked pytest` | 58 passed、1 skipped |
+| `uv run --locked pytest` | 61 passed、1 skipped |
 | `uv run --locked ruff check .` | 成功 |
-| `uv run --locked ruff format --check .` | 成功（76 files already formatted） |
+| `uv run --locked ruff format --check .` | 成功（77 files already formatted） |
 | `uv run --locked mypy wg4_demo scripts` | 成功（39 source files） |
 | `uv run --locked pip-audit` | 既知脆弱性0件 |
-| `uv run --locked python scripts/check_repository_safety.py` | 成功（94 tracked or addable files） |
-| `uv run --locked python scripts/run_load_test.py --sessions 30 --delay 0.05` | 30完了、0失敗、最大同時3、median 1.0534秒、p95 1.3490秒、外部API 0 |
-| `uv run --locked pytest --cov=wg4_demo --cov-report=term-missing:skip-covered` | 58 passed、1 skipped、総合72% |
+| `uv run --locked python scripts/check_repository_safety.py` | 成功（95 tracked or addable files） |
+| `uv run --locked python scripts/run_load_test.py --sessions 30 --delay 0.05` | 30完了、0失敗、最大同時3、median 1.2512秒、p95 1.6621秒、外部API 0 |
+| `uv run --locked pytest --cov=wg4_demo --cov-report=term-missing:skip-covered` | 61 passed、1 skipped、総合72% |
 
 pytestのskip 1件は、`RUN_LIVE_TESTS=1`が明示されていない既存live gate。通常テストは外部APIを呼んでいない。
 
@@ -79,6 +79,8 @@ pytestのskip 1件は、`RUN_LIVE_TESTS=1`が明示されていない既存live 
 明示的な「この知識について相談する」から開始した現在の1ターンだけ、取得済みの選択項目を第1候補として検証するよう修正した。通常の候補検索では検索1位規則を維持し、版・fact・原文・workspaceの検証も変更していない。2回目の修正後のv5 full実API検証はまだ行っていないため、A/B/Cの実API成功、所要時間、call数、token量は未確認。今後の失敗時には一時台帳を削除する前に、安全なcall数とtoken数を出力するようlive検証スクリプトを更新した。
 
 同日に上記修正後のv5 fullを新規実行したが、最初の抽出が原文にある必須fact種別を一つ省略したため停止した。使用量は1 call、入力803 tokens、出力263 tokens、4.776秒。再送は行っていない。`gpt-5.6-luna`は維持し、講演用の推奨推論強度を`medium`へ変更した。抽出promptには、原文に明示された異なるkindを統合せず、観察・事例条件・確認行動を種類別に漏れなく対応付ける一般則を追加した。`medium`でのv5 full実API検証は未実施であり、A/B/Cの実API成功はまだ確認していない。
+
+`medium`での次の新規実行は、文書抽出・v1承認・比較Aまでは進み、最初の追加質問が「理由」「なぜ」「考え」の語を含まなかったためliveスクリプトの固定語判定で停止した。使用量は6 calls、入力14,965 tokens、出力1,145 tokens、21.532秒。質問内容のschema違反や根拠違反ではなかった。この表層語判定は、二往復程度を目安とし質問順序・文言を固定しないv5仕様と矛盾するため削除した。代わりに、補足承認後のv2が本人回答を根拠とする`decision_reason`と`applicability`または`exception`を実際に保持することを検証する。併せて、A/B/Cを実画面から起動する経路にも明示選択マーカーを追加した。修正後の実API A/B/C通過は未確認。
 
 過去にprompt v12・旧v3フローで`gpt-5.6-luna`、reasoning `low`のローカル実API検証が成功しているが、その47.5秒・20 calls等をv5の実績へ流用しない。
 

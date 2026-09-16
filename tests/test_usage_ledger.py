@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from wg4_demo.auth import AuthService
-from wg4_demo.errors import AppError
+from wg4_demo.errors import AppError, ConfigurationError
 from wg4_demo.schemas import Role, SessionRecord
 from wg4_demo.settings import Settings
 from wg4_demo.usage_ledger import UsageLedger
@@ -61,6 +61,29 @@ def test_unapproved_model_is_rejected_before_reservation(
             session_id=participant.id,
             action_id="action-model",
             model="automatic-fallback-model",
+            estimated_input_tokens=10,
+        )
+    assert ledger.status()["used_calls"] == 0
+
+
+def test_runtime_live_gate_blocks_reservation_even_when_budget_is_enabled(
+    settings: Settings, auth: AuthService, participant: SessionRecord
+) -> None:
+    disabled = settings.model_copy(update={"app_llm_enabled": False})
+    ledger = UsageLedger(disabled.control_db_path, disabled, auth)
+    admin = auth.login("admin-secret", role=Role.ADMIN, client_token="disabled-gate-admin")
+    ledger.enable_budget(
+        admin.id,
+        additional_calls=1,
+        confirmed_external_limit=True,
+        reason="gate test",
+    )
+
+    with pytest.raises(ConfigurationError):
+        ledger.reserve_call(
+            session_id=participant.id,
+            action_id="disabled-gate-action",
+            model="test-model",
             estimated_input_tokens=10,
         )
     assert ledger.status()["used_calls"] == 0

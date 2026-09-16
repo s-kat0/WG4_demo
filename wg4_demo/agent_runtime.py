@@ -152,6 +152,62 @@ class StructuredWorkflowService:
             allowed_segment_ids=allowed_segment_ids,
         )
 
+    async def supplement_and_stage(
+        self,
+        context: GatewayCallContext,
+        *,
+        workspace_id: str,
+        target_item_id: str,
+        target_version: int,
+        statements: list[dict[str, str]],
+        allowed_segment_ids: set[str],
+    ) -> ProposalRecord:
+        """Extract only human-provided supplements for an existing approved item."""
+
+        item = self.repository.get_knowledge(workspace_id, target_item_id, target_version)
+        draft = await self.gateway.structured(
+            context,
+            instructions=self.prompts.read("interview_update"),
+            input_text=json.dumps(
+                {
+                    "current_knowledge": {
+                        "knowledge_id": item.id,
+                        "version": item.version,
+                        "facts": [fact.model_dump(mode="json") for fact in item.facts],
+                        "missing_fields": item.missing_fields,
+                        "cause_status": item.cause_status.value,
+                    },
+                    "statements": statements,
+                },
+                ensure_ascii=False,
+            ),
+            output_type=KnowledgeDraft,
+        )
+        existing = {(fact.kind, fact.text) for fact in item.facts}
+        new_facts = [fact for fact in draft.facts if (fact.kind, fact.text) not in existing]
+        if not new_facts:
+            raise ValidationFailure(
+                "本人役の発言から新しい根拠付きfactを抽出できませんでした。",
+                code="supplement_no_new_fact",
+            )
+        operations = [
+            ProposalOperation(operation=OperationType.ADD_FACT, new_fact=fact) for fact in new_facts
+        ]
+        return self.repository.stage_proposal(
+            workspace_id,
+            action_id=context.action_id,
+            target_item_id=item.id,
+            base_version=item.version,
+            operations=operations,
+            reason="本人役への聞き取りで判断理由・適用範囲を補足",
+            equipment=item.equipment,
+            case_label=item.case_label,
+            title=item.title,
+            missing_fields=draft.missing_fields,
+            cause_status=item.cause_status,
+            allowed_segment_ids=allowed_segment_ids,
+        )
+
 
 class AgentService:
     def __init__(
@@ -179,6 +235,8 @@ class AgentService:
         call_context: GatewayCallContext,
         tool_context: ToolRuntimeContext,
         question: str,
+        *,
+        conversation_context: dict[str, Any] | None = None,
     ) -> tuple[AnswerSelection, ToolRuntimeContext]:
         client = self.gateway.create_client()
         try:
@@ -192,7 +250,13 @@ class AgentService:
             )
             result = await Runner.run(
                 agent,
-                question,
+                json.dumps(
+                    {
+                        "question": question,
+                        "consultation": conversation_context or {},
+                    },
+                    ensure_ascii=False,
+                ),
                 context=tool_context,
                 max_turns=self.settings.max_model_calls_per_action,
                 run_config=self._run_config(),
@@ -203,7 +267,11 @@ class AgentService:
                 else AnswerSelection.model_validate(result.final_output)
             )
             return self.validator.validate_answer(
-                tool_context.workspace_id, answer, tool_context.trace
+                tool_context.workspace_id,
+                answer,
+                tool_context.trace,
+                expected_intent=tool_context.answer_intent,
+                focus_knowledge_ids=tool_context.focus_knowledge_ids,
             ), tool_context
         except (MaxTurnsExceeded, ModelBehaviorError, ModelRefusalError) as exc:
             raise translate_agent_error(exc) from exc
@@ -261,6 +329,8 @@ class AgentService:
         kb_revision: int,
         deadline: datetime,
         submitted_segment_ids: set[str] | None = None,
+        answer_intent: str = "candidate_search",
+        focus_knowledge_ids: set[str] | None = None,
         is_active: Callable[[], bool] = lambda: True,
     ) -> ToolRuntimeContext:
         return ToolRuntimeContext(
@@ -276,6 +346,8 @@ class AgentService:
             evidence=self.evidence,
             max_tool_calls=self.settings.max_tool_calls_per_action,
             submitted_segment_ids=submitted_segment_ids or set(),
+            answer_intent=answer_intent,
+            focus_knowledge_ids=focus_knowledge_ids or set(),
             is_active=is_active,
         )
 

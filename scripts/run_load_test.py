@@ -48,13 +48,25 @@ def main() -> int:
         repository = Repository(settings.knowledge_db_path)
         jobs = JobService(settings.control_db_path, settings, auth, repository)
         submitted: list[tuple[str, str, float]] = []
+        all_knowledge_ids: set[str] = set()
         for index in range(args.sessions):
             session = auth.login(
                 "load-test-password",
                 role=Role.PARTICIPANT,
                 client_token=f"context-{index}",
             )
-            workspace = repository.create_workspace(session.id, seed_mode="from_scratch")
+            workspace = repository.create_workspace(
+                session.id,
+                seed_mode="practical_v5",
+                seed_path=root / "data" / "knowledge_seed_v5.json",
+            )
+            items = repository.list_knowledge(workspace.id)
+            if len(items) != 12:
+                raise RuntimeError("v5 seed count mismatch during load test")
+            workspace_ids = {item.id for item in items}
+            if all_knowledge_ids & workspace_ids:
+                raise RuntimeError("knowledge ids leaked across workspaces")
+            all_knowledge_ids.update(workspace_ids)
             conversation = repository.create_conversation(workspace.id)
             started = time.monotonic()
             job = jobs.enqueue(
@@ -114,6 +126,8 @@ def main() -> int:
             "p95_seconds": round(latencies[p95_index], 4),
             "max_seconds": round(max(latencies), 4),
             "external_api_calls": 0,
+            "seed_items_per_workspace": 12,
+            "workspace_knowledge_ids_disjoint": True,
             "project_root": root.name,
         }
         print(json.dumps(report, ensure_ascii=False, indent=2))

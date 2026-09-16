@@ -22,12 +22,14 @@ SECRET_PATTERNS = [
 ]
 
 
-def tracked_files(root: Path) -> list[str]:
+def repository_files(root: Path) -> list[str]:
+    """Return tracked files plus non-ignored files that could be added to Git."""
+
     git_executable = shutil.which("git")
     if git_executable is None:
         raise RuntimeError("git executable not found")
     result = subprocess.run(  # noqa: S603
-        [git_executable, "ls-files", "-z"],
+        [git_executable, "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
         cwd=root,
         check=True,
         capture_output=True,
@@ -38,7 +40,8 @@ def tracked_files(root: Path) -> list[str]:
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
     violations: list[str] = []
-    for relative in tracked_files(root):
+    candidates = repository_files(root)
+    for relative in candidates:
         if relative not in ALLOWED_PATHS and any(
             pattern.search(relative) for pattern in FORBIDDEN_PATHS
         ):
@@ -62,7 +65,7 @@ def main() -> int:
         for violation in violations:
             print(f"- {violation}")
         return 1
-    print(f"Repository safety check passed ({len(tracked_files(root))} tracked files).")
+    print(f"Repository safety check passed ({len(candidates)} tracked or addable files).")
     return 0
 
 

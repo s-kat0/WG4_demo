@@ -57,7 +57,23 @@ class ApplicationJobRunner:
                 "proposal_id": proposal.id,
                 "content_hash": proposal.content_hash,
             }
+        if job.mode == "supplement":
+            proposal = await self.structured.supplement_and_stage(
+                call_context,
+                workspace_id=job.workspace_id,
+                target_item_id=str(job.payload["target_item_id"]),
+                target_version=int(job.payload["target_version"]),
+                statements=self._string_dicts(job.payload["statements"]),
+                allowed_segment_ids=set(self._string_list(job.payload["allowed_segment_ids"])),
+            )
+            return "proposal", {
+                "proposal_id": proposal.id,
+                "content_hash": proposal.content_hash,
+            }
         if job.mode == "qa":
+            consultation = self._object_dict(job.payload.get("consultation", {}))
+            intent = str(consultation.get("last_intent", "candidate_search"))
+            focus_ids = set(self._string_list(consultation.get("focus_knowledge_ids", [])))
             tool_context = self.agents.new_tool_context(
                 session_id=job.session_id,
                 workspace_id=job.workspace_id,
@@ -65,16 +81,38 @@ class ApplicationJobRunner:
                 mode="qa",
                 kb_revision=job.kb_revision,
                 deadline=job.run_deadline_at,
+                answer_intent=intent,
+                focus_knowledge_ids=focus_ids,
                 is_active=lambda: self.jobs.heartbeat(job),
             )
             answer, completed_context = await self.agents.answer(
-                call_context, tool_context, str(job.payload["question"])
+                call_context,
+                tool_context,
+                str(job.payload["question"]),
+                conversation_context=consultation,
             )
-            return "answer", {
+            payload: dict[str, object] = {
                 "selection": answer.model_dump(mode="json"),
                 "tools": completed_context.trace.calls,
                 "conversation_id": job.conversation_id,
             }
+            comparison_stage = job.payload.get("comparison_stage")
+            if comparison_stage is not None:
+                payload["comparison"] = {
+                    "stage": str(comparison_stage),
+                    "question": str(job.payload["question"]),
+                    "conversation_id": job.conversation_id,
+                    "empty_history": job.payload.get("empty_history") is True,
+                    "kb_revision": job.kb_revision,
+                    "target_item_id": job.payload.get("target_item_id"),
+                    "target_version": job.payload.get("target_version"),
+                    "model_id": job.model_id,
+                    "model_settings": job.model_settings,
+                    "prompt_version": job.prompt_version,
+                    "schema_version": job.schema_version,
+                    "retrieval_version": "wg4-lexical-v2",
+                }
+            return "answer", payload
         if job.mode == "update":
             submitted_ids = set(self._string_list(job.payload["submitted_segment_ids"]))
             tool_context = self.agents.new_tool_context(

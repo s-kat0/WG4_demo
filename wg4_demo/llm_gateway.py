@@ -80,15 +80,17 @@ class LLMGateway:
         model = self._required_model()
         payload = {"instructions": instructions, "input": input_text}
         self._validate_prompt(payload)
-        reservation = await self.ledger.reserve_call_with_wait(
-            session_id=context.session_id,
-            action_id=context.action_id,
-            model=model,
-            estimated_input_tokens=self.estimate_tokens(json.dumps(payload, ensure_ascii=False)),
-            deadline=context.deadline,
-        )
         client = self.create_client()
         try:
+            reservation = await self.ledger.reserve_call_with_wait(
+                session_id=context.session_id,
+                action_id=context.action_id,
+                model=model,
+                estimated_input_tokens=self.estimate_tokens(
+                    json.dumps(payload, ensure_ascii=False)
+                ),
+                deadline=context.deadline,
+            )
             try:
                 response = await client.responses.parse(
                     model=model,

@@ -43,9 +43,10 @@ def enqueue(services: Services, *, mode: str, payload: dict[str, Any]) -> JobRec
             "store": False,
             "parallel_tool_calls": False,
             "max_output_tokens": services.settings.max_output_tokens,
+            "reasoning_effort": services.settings.openai_reasoning_effort,
         },
-        prompt_version="wg4-prompts-v12",
-        schema_version="wg4-schema-v1",
+        prompt_version="wg4-prompts-v13",
+        schema_version="wg4-schema-v2",
         dedupe_key=new_dedupe_key(),
     )
     st.session_state.active_job_id = job.job_id
@@ -53,6 +54,7 @@ def enqueue(services: Services, *, mode: str, payload: dict[str, Any]) -> JobRec
     st.session_state.pop("last_failure", None)
     st.session_state.pop("last_completion", None)
     st.session_state.setdefault("last_outcomes", {}).pop(mode, None)
+    st.session_state.setdefault("last_outcome_action_ids", {}).pop(mode, None)
     services.scheduler.wake()
     return job
 
@@ -100,6 +102,7 @@ def _render_job_status(services: Services) -> None:
             return
         outcomes = st.session_state.setdefault("last_outcomes", {})
         outcomes[job.mode] = outcome["payload"]
+        st.session_state.setdefault("last_outcome_action_ids", {})[job.mode] = job.action_id
         st.session_state["last_completion"] = {"action_id": job.action_id}
         st.session_state.pop("last_failure", None)
     else:

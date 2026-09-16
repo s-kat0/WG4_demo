@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import streamlit as st
 
-from wg4_demo.repository import KnowledgeRecord, ProposalRecord
+from wg4_demo.repository import AnswerSnapshotRecord, KnowledgeRecord, ProposalRecord
+from wg4_demo.schemas import AnswerSelection
 from wg4_demo.services import Services
 from wg4_demo.ui.common import active_job_exists, enqueue, show_action_error
+from wg4_demo.ui.qa import answer_fact_ids, render_answer
+from wg4_demo.ui.register import _enqueue_comparison
 
 KIND_LABELS = {
     "observation": "観察・症状",
@@ -20,136 +24,112 @@ KIND_LABELS = {
     "cause_status": "原因の確定状況",
 }
 
-OPERATION_LABELS = {
-    "add_fact": "追加",
-    "replace_fact": "置換",
-    "remove_fact": "削除",
-}
-
 SCOPE_LABELS = {
-    "case_context": "事例条件",
-    "action_prerequisite": "行動前提",
+    "case_context": "当該事例の条件",
+    "applicability": "参照してよい条件",
+    "action_prerequisite": "確認行動の前提",
     "exclusion": "除外条件",
 }
 
 
 def render(services: Services, project_root: Path) -> None:
-    st.header("4. 更新案を作成・確認")
-    demo = json.loads((project_root / "data" / "demo_inputs.json").read_text("utf-8"))
+    st.header("4. 更新案・実回答比較")
+    demo = json.loads((project_root / "data" / "demo_inputs_v5.json").read_text("utf-8"))
     try:
-        items = services.repository.list_knowledge(st.session_state.workspace_id)
-        pending = services.repository.list_pending_proposals(st.session_state.workspace_id)
-        item3 = next((item for item in items if item.display_name == "知識項目3"), None)
-        qa_completed = "qa" in st.session_state.get("last_outcomes", {})
-        _render_current_step(pending, item3, qa_completed)
-        _render_pending(services, pending)
-        _render_update_form(
-            services,
-            demo["update_statement"],
-            item3,
-            qa_completed=qa_completed,
-            has_pending=bool(pending),
+        workspace = services.repository.require_workspace(
+            st.session_state.session_id, st.session_state.workspace_id
         )
+        item = (
+            services.repository.get_knowledge(workspace.id, workspace.lecture_case_item_id)
+            if workspace.lecture_case_item_id
+            else None
+        )
+        pending = services.repository.list_pending_proposals(workspace.id)
+        _render_guide(pending, item)
+        _render_pending(services, pending)
+        snapshots = services.repository.list_answer_snapshots(workspace.id)
+        _render_comparison_controls(services, demo, item, snapshots, bool(pending))
+        _render_snapshots(services, snapshots)
+        _render_feedback(services, demo, item, snapshots, bool(pending))
     except Exception as exc:
         show_action_error(exc)
 
 
-def _render_current_step(
-    pending: list[ProposalRecord], item3: KnowledgeRecord | None, qa_completed: bool
-) -> None:
-    with st.expander("この画面で行うこと", expanded=True):
+def _render_guide(pending: list[ProposalRecord], item: KnowledgeRecord | None) -> None:
+    with st.expander("この画面で今すること", expanded=True):
         if pending:
             st.markdown(
-                "**今やること：下の「人の確認待ち」を確認します。**  "
-                "内容と原文根拠が正しければ確認欄にチェックして承認し、"
-                "誤り・推測・根拠不足があれば却下します。更新作成欄はまだ使いません。"
+                "**下の『人の確認待ち』を確認してください。**  "
+                "追加内容と原文が一致し、推測がなければ確認欄を選んで承認します。"
             )
-        elif item3 is None:
+        elif item is None:
             st.markdown(
-                "**次に選ぶ画面：サイドバーの「文書・経験を登録」**  "
-                "抽出、追加質問、回答反映まで実行すると、この画面にpending案が現れます。"
+                "**次は『知識を追加・補足する』です。** 文書を抽出し、文書だけの承認候補を作ります。"
             )
-        elif item3.version == 1 and not qa_completed:
+        elif item.version == 1:
             st.markdown(
-                "**次に選ぶ画面：サイドバーの「質問して使う」**  "
-                "v1で主質問を実行した後、この画面へ戻って新しい発言を登録します。"
+                "**文書版v1です。** 『知識を追加・補足する』で回答Aと本人役への聞き取りを進めます。"
             )
-        elif item3.version == 1:
+        elif item.version == 2:
             st.markdown(
-                "**今やること：下の「新しい発言からv2更新案を作る」を開きます。**  "
-                "更新対象は知識項目3 v1に固定されています。例文を確認して実行してください。"
+                "**対話補足版v2です。** 下で回答Bを実行し、その実候補へ校正条件を補足します。"
             )
         else:
             st.markdown(
-                "**次に選ぶ画面：サイドバーの「質問して使う」**  "
-                "「新しい会話」を押してから同じ主質問を実行し、v2と追加根拠を確認します。"
+                "**フィードバック承認後の版です。** 下で空履歴の回答Cを実行し、B/Cの根拠差を確認します。"
             )
 
 
 def _render_pending(services: Services, pending: list[ProposalRecord]) -> None:
-    st.subheader("いま行う：人の確認待ち")
+    st.subheader("人の確認待ち")
     if not pending:
-        st.caption("現在、確認待ちの案はありません。上の案内に従って次の画面を選びます。")
+        st.caption("現在、確認待ちの案はありません。")
         return
     for proposal in pending:
         with st.container(border=True):
             destination = (
                 "新規知識（承認するとv1）"
                 if proposal.base_version == 0
-                else f"既存知識 v{proposal.base_version} → v{proposal.base_version + 1}"
+                else f"現行v{proposal.base_version} → 新版v{proposal.base_version + 1}"
             )
             st.markdown(f"**承認対象：{destination}**")
+            if proposal.title:
+                st.write(f"知識名：{proposal.title}")
             st.write(f"作成理由：{proposal.reason}")
             st.caption(f"内容識別子: {proposal.content_hash[:12]} / 状態: pending")
-            with st.expander("合格基準を見る", expanded=True):
-                if proposal.base_version == 0:
-                    st.markdown(
-                        "- 症状、温度計交換後、別計器との照合、冷却水側の条件、"
-                        "原因未特定が原文どおりに整理されている\n"
-                        "- 原文にない故障原因、照合結果、一般化を追加していない\n"
-                        "- **温度計交換後は「条件」**として独立している"
-                    )
-                else:
-                    st.markdown(
-                        "- 照合用計器の校正確認が、確認行動の**行動前提**として追加される\n"
-                        "- 「校正が有効だった」という観測事実へ変えていない\n"
-                        "- 承認前の通常検索結果は旧版のまま"
-                    )
             for operation in proposal.operations:
-                operation_label = OPERATION_LABELS[operation.operation.value]
                 if operation.new_fact:
                     fact = operation.new_fact
-                    kind_label = KIND_LABELS[fact.kind.value]
                     scope = (
                         f" / {SCOPE_LABELS[fact.condition_scope.value]}"
                         if fact.condition_scope
                         else ""
                     )
-                    st.markdown(f"**{operation_label}・{kind_label}{scope}**：{fact.text}")
+                    st.markdown(f"**追加・{KIND_LABELS[fact.kind.value]}{scope}**：{fact.text}")
                     for evidence in fact.evidence:
                         st.caption(f"引用：『{evidence.quote}』")
                 else:
-                    st.write(f"{operation_label}：既存fact {operation.target_fact_id}")
+                    st.write(f"{operation.operation.value}：既存fact {operation.target_fact_id}")
             if proposal.missing_fields:
-                st.warning("未確認事項：" + "、".join(proposal.missing_fields))
+                st.warning("承認後も残る未確認事項：" + "、".join(proposal.missing_fields))
             st.caption(f"原因の確定状況：{proposal.cause_status.value}")
-            evidence_ids = [
-                evidence.segment_id
-                for operation in proposal.operations
-                if operation.new_fact
-                for evidence in operation.new_fact.evidence
-            ]
-            if evidence_ids:
-                segments = services.repository.read_segments(
-                    st.session_state.workspace_id, evidence_ids
+            evidence_ids = list(
+                dict.fromkeys(
+                    evidence.segment_id
+                    for operation in proposal.operations
+                    if operation.new_fact
+                    for evidence in operation.new_fact.evidence
                 )
-                unique_segments = {segment["id"]: segment for segment in segments}
-                with st.expander("原文の根拠を確認", expanded=True):
-                    for segment in unique_segments.values():
-                        st.caption(f"{segment['title']} / 原文{segment['ordinal']}")
-                        st.text(segment["text"])
+            )
+            if evidence_ids:
+                with st.expander("原文と差分を照合", expanded=True):
+                    for segment in services.repository.read_segments(
+                        st.session_state.workspace_id, evidence_ids
+                    ):
+                        st.caption(f"{segment['title']} / {segment['speaker']}")
+                        st.text(str(segment["text"]))
             confirmed = st.checkbox(
-                "内容、factの種類、未確認事項、原文根拠を確認しました",
+                "追加内容、fact種別、確定度、未確認事項、原文を照合しました",
                 key=f"confirmed-{proposal.id}",
             )
             approve, reject = st.columns(2)
@@ -164,7 +144,8 @@ def _render_pending(services: Services, pending: list[ProposalRecord]) -> None:
                     proposal_id=proposal.id,
                     expected_content_hash=proposal.content_hash,
                 )
-                st.success(f"v{result.after_version} として承認しました。")
+                st.success(f"{result.item_id[:8]} をv{result.after_version}として承認しました。")
+                st.session_state.pop("search_result", None)
                 st.rerun()
             if reject.button(
                 "内容に問題があるため却下",
@@ -179,50 +160,156 @@ def _render_pending(services: Services, pending: list[ProposalRecord]) -> None:
                 st.rerun()
 
 
-def _render_update_form(
+def _render_comparison_controls(
     services: Services,
-    update_statement: str,
-    item3: KnowledgeRecord | None,
-    *,
-    qa_completed: bool,
+    demo: dict[str, Any],
+    item: KnowledgeRecord | None,
+    snapshots: list[AnswerSnapshotRecord],
     has_pending: bool,
 ) -> None:
-    ready = item3 is not None and item3.version == 1 and qa_completed and not has_pending
-    with st.expander("次の工程：新しい発言からv2更新案を作る", expanded=ready):
-        if has_pending:
-            st.info("先に上のpending案を承認または却下してください。この欄はまだ使いません。")
-        elif item3 is None:
-            st.info("先に「文書・経験を登録」で最初の承認候補を作ってください。")
-        elif item3.version != 1:
-            st.success("知識項目3はすでにv2です。新しい会話で再検索してください。")
-        elif not qa_completed:
-            st.info("先に「質問して使う」でv1の根拠付き回答を確認してください。")
-        with st.form("update-form"):
-            target_label = f"{item3.display_name} v{item3.version}" if item3 else "未作成"
-            st.text_input(
-                "更新対象（このデモでは知識項目3）",
-                value=target_label,
-                disabled=True,
+    if item is None:
+        return
+    by_stage = {snapshot.stage: snapshot for snapshot in snapshots}
+    expected_stage = "A" if item.version == 1 else "B" if item.version == 2 else "C"
+    if expected_stage in by_stage:
+        return
+    st.subheader(f"比較回答{expected_stage}を実行")
+    st.write(demo["comparison_question"])
+    st.caption("同じ質問・モデル・prompt・検索設定を使い、毎回新しい空のQA会話で実行します。")
+    if st.button(
+        f"空の会話で回答{expected_stage}を実行（APIを使用）",
+        disabled=active_job_exists(services) or has_pending,
+        key=f"run-comparison-{expected_stage}",
+    ):
+        _enqueue_comparison(services, demo["comparison_question"], item, expected_stage)
+        st.rerun()
+
+
+def _render_snapshots(services: Services, snapshots: list[AnswerSnapshotRecord]) -> None:
+    st.subheader("保存済みの実回答 A / B / C")
+    if not snapshots:
+        st.info("比較用の実行記録なし")
+        return
+    by_stage = {snapshot.stage: snapshot for snapshot in snapshots}
+    for stage in ("A", "B", "C"):
+        snapshot = by_stage.get(stage)
+        if snapshot is None:
+            st.caption(f"回答{stage}：比較用の実行記録なし")
+            continue
+        with st.expander(
+            f"回答{stage} — {snapshot.state} / 対象v{snapshot.target_version}",
+            expanded=stage in {"A", "B"},
+        ):
+            st.caption(
+                f"実行 {snapshot.created_at} / KB改訂 {snapshot.kb_revision} / "
+                f"model {snapshot.model_id} / prompt {snapshot.prompt_version} / 空履歴 {snapshot.empty_history}"
             )
-            statement = st.text_area(
-                "新しい発言",
-                value=update_statement,
-                max_chars=services.settings.max_input_chars,
-                disabled=not ready,
-            )
-            submit = st.form_submit_button(
-                "この発言から更新案を作る",
-                disabled=active_job_exists(services) or not ready,
-            )
-        if submit and item3:
+            if snapshot.state == "failed" or snapshot.payload is None:
+                st.error(
+                    f"この実行は失敗しました：{snapshot.safe_error_code or 'unknown_error'}。"
+                    "模範回答や過去回答では置き換えていません。"
+                )
+            else:
+                render_answer(
+                    services,
+                    AnswerSelection.model_validate(snapshot.payload["selection"]),
+                    list(snapshot.payload["tools"]),
+                )
+    if "A" in by_stage and "B" in by_stage:
+        _render_pair_comparison("A", by_stage["A"], "B", by_stage["B"])
+    if "B" in by_stage and "C" in by_stage:
+        _render_pair_comparison("B", by_stage["B"], "C", by_stage["C"])
+
+
+def _render_pair_comparison(
+    left_label: str,
+    left: AnswerSnapshotRecord,
+    right_label: str,
+    right: AnswerSnapshotRecord,
+) -> None:
+    same_settings = all(
+        (
+            left.question_hash == right.question_hash,
+            left.model_id == right.model_id,
+            left.model_settings == right.model_settings,
+            left.prompt_version == right.prompt_version,
+            left.schema_version == right.schema_version,
+            left.retrieval_version == right.retrieval_version,
+            left.empty_history and right.empty_history,
+        )
+    )
+    if same_settings:
+        st.success(f"{left_label}/{right_label}は同一条件の実回答比較です。")
+    else:
+        st.warning(f"{left_label}/{right_label}は設定差があるため参考比較です。")
+    if left.payload and right.payload:
+        left_ids = answer_fact_ids(left.payload)
+        right_ids = answer_fact_ids(right.payload)
+        st.write(f"{right_label}で新たに参照：{len(right_ids - left_ids)} fact")
+        st.write(f"{right_label}で参照しなくなった：{len(left_ids - right_ids)} fact")
+
+
+def _render_feedback(
+    services: Services,
+    demo: dict[str, Any],
+    item: KnowledgeRecord | None,
+    snapshots: list[AnswerSnapshotRecord],
+    has_pending: bool,
+) -> None:
+    if item is None or item.version != 2 or has_pending:
+        return
+    stage_b = next(
+        (
+            snapshot
+            for snapshot in snapshots
+            if snapshot.stage == "B" and snapshot.state == "succeeded" and snapshot.payload
+        ),
+        None,
+    )
+    if stage_b is None:
+        return
+    stage_b_payload = stage_b.payload
+    if stage_b_payload is None:
+        return
+    answer = AnswerSelection.model_validate(stage_b_payload["selection"])
+    if not answer.candidates:
+        st.warning("回答Bに実候補がないため、候補へのフィードバックは作成できません。")
+        return
+    candidate = next(
+        (candidate for candidate in answer.candidates if candidate.knowledge_id == item.id),
+        None,
+    )
+    if candidate is None:
+        st.warning("回答Bが講演対象事例を候補に含めなかったため、その結果から更新案を作りません。")
+        return
+    target = services.repository.get_knowledge(
+        st.session_state.workspace_id, candidate.knowledge_id
+    )
+    if target.version != candidate.version:
+        st.warning("回答Bの参照版と現行版が異なるため、この画面から更新案を作りません。")
+        return
+    st.subheader("回答Bの実候補へ条件を一つ補足")
+    st.caption(f"対象：{target.display_name} v{target.version} — {target.title}")
+    with st.form("feedback-form"):
+        statement = st.text_area(
+            "本人役の新しい発言",
+            value=demo["feedback"]["text"],
+            max_chars=services.settings.max_input_chars,
+        )
+        submit = st.form_submit_button(
+            "根拠・条件の更新案を作る（APIを使用）",
+            disabled=active_job_exists(services),
+        )
+    if submit:
+        try:
             _, mapping = services.repository.register_source(
                 st.session_state.workspace_id,
-                title="聞き取り記録2",
+                title=demo["feedback"]["title"],
                 kind="interview",
-                equipment=item3.equipment,
-                case_label=item3.case_label,
-                external_key=f"update-{uuid4()}",
-                segments=[(f"update-p1-{uuid4()}", "operator", statement)],
+                equipment=target.equipment,
+                case_label=target.case_label,
+                external_key=f"feedback-{uuid4()}",
+                segments=[(f"feedback-p1-{uuid4()}", "operator", statement)],
             )
             segment_id = next(iter(mapping.values()))
             enqueue(
@@ -231,9 +318,12 @@ def _render_update_form(
                 payload={
                     "statement": statement,
                     "submitted_segment_ids": [segment_id],
-                    "target_knowledge_id": item3.id,
-                    "target_version": item3.version,
-                    "equipment": item3.equipment,
+                    "target_knowledge_id": target.id,
+                    "target_version": target.version,
+                    "equipment": target.equipment,
+                    "answer_action_id": stage_b.action_id,
                 },
             )
             st.rerun()
+        except Exception as exc:
+            show_action_error(exc)

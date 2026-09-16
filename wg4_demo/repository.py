@@ -5,8 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from collections import Counter
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -19,6 +20,7 @@ from wg4_demo.errors import AppError, AuthorizationError, StaleContextError, Val
 from wg4_demo.schemas import (
     CauseStatus,
     ConditionScope,
+    ConversationState,
     EvidenceDraft,
     EvidenceRef,
     FactDraft,
@@ -27,10 +29,15 @@ from wg4_demo.schemas import (
     ProposalOperation,
     StoredFact,
 )
+from wg4_demo.seed_v5 import V5SeedManifest, load_v5_seed
 
-DOMAIN_SCHEMA_VERSION = 1
+DOMAIN_SCHEMA_VERSION = 2
 stored_facts_adapter = TypeAdapter(list[StoredFact])
 operations_adapter = TypeAdapter(list[ProposalOperation])
+
+
+class _StaleProposalError(Exception):
+    """Internal signal used to commit a stale transition before returning an error."""
 
 
 def utc_now() -> datetime:
@@ -51,6 +58,7 @@ class WorkspaceRecord:
     session_id: str
     kb_revision: int
     seed_mode: str
+    lecture_case_item_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,8 +66,14 @@ class KnowledgeRecord:
     workspace_id: str
     id: str
     display_name: str
+    display_number: int
+    title: str
     equipment: str
     case_label: str | None
+    source_kind: str
+    tags: list[str]
+    registration_origin: str
+    origin_label: str
     version: int
     facts: list[StoredFact]
     missing_fields: list[str]
@@ -78,6 +92,7 @@ class ProposalRecord:
     content_hash: str
     equipment: str
     case_label: str | None
+    title: str | None
     missing_fields: list[str]
     cause_status: CauseStatus
 
@@ -90,6 +105,29 @@ class ApprovalResult:
     after_version: int
     kb_revision: int
     already_applied: bool
+
+
+@dataclass(frozen=True, slots=True)
+class AnswerSnapshotRecord:
+    id: str
+    stage: str
+    action_id: str
+    question: str
+    question_hash: str
+    conversation_id: str
+    empty_history: bool
+    kb_revision: int
+    target_item_id: str | None
+    target_version: int | None
+    model_id: str
+    model_settings: dict[str, Any]
+    prompt_version: str
+    schema_version: str
+    retrieval_version: str
+    state: str
+    payload: dict[str, Any] | None
+    safe_error_code: str | None
+    created_at: str
 
 
 class Repository:
@@ -113,7 +151,8 @@ class Repository:
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL,
                         kb_revision INTEGER NOT NULL DEFAULT 0,
-                        seed_mode TEXT NOT NULL
+                        seed_mode TEXT NOT NULL,
+                        lecture_case_item_id TEXT
                     );
                     CREATE TABLE IF NOT EXISTS sources (
                         workspace_id TEXT NOT NULL,
@@ -147,8 +186,13 @@ class Repository:
                         workspace_id TEXT NOT NULL,
                         id TEXT NOT NULL,
                         display_number INTEGER NOT NULL,
+                        title TEXT NOT NULL DEFAULT '',
                         equipment TEXT NOT NULL,
                         case_label TEXT,
+                        source_kind TEXT NOT NULL DEFAULT 'document',
+                        tags_json TEXT NOT NULL DEFAULT '[]',
+                        registration_origin TEXT NOT NULL DEFAULT 'user_approved',
+                        display_origin_label TEXT NOT NULL DEFAULT 'ユーザー承認',
                         active_version INTEGER NOT NULL,
                         PRIMARY KEY (workspace_id, id),
                         UNIQUE (workspace_id, display_number),
@@ -182,6 +226,7 @@ class Repository:
                         content_hash TEXT NOT NULL,
                         equipment TEXT NOT NULL,
                         case_label TEXT,
+                        title TEXT,
                         missing_fields_json TEXT NOT NULL,
                         cause_status TEXT NOT NULL,
                         created_at TEXT NOT NULL,
@@ -224,6 +269,40 @@ class Repository:
                         FOREIGN KEY (workspace_id, conversation_id)
                             REFERENCES conversations(workspace_id, id) ON DELETE CASCADE
                     );
+                    CREATE TABLE IF NOT EXISTS conversation_states (
+                        workspace_id TEXT NOT NULL,
+                        conversation_id TEXT NOT NULL,
+                        state_json TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY (workspace_id, conversation_id),
+                        FOREIGN KEY (workspace_id, conversation_id)
+                            REFERENCES conversations(workspace_id, id) ON DELETE CASCADE
+                    );
+                    CREATE TABLE IF NOT EXISTS answer_snapshots (
+                        workspace_id TEXT NOT NULL,
+                        id TEXT NOT NULL,
+                        stage TEXT NOT NULL CHECK (stage IN ('A', 'B', 'C')),
+                        action_id TEXT NOT NULL,
+                        question TEXT NOT NULL,
+                        question_hash TEXT NOT NULL,
+                        conversation_id TEXT NOT NULL,
+                        empty_history INTEGER NOT NULL CHECK (empty_history IN (0, 1)),
+                        kb_revision INTEGER NOT NULL,
+                        target_item_id TEXT,
+                        target_version INTEGER,
+                        model_id TEXT NOT NULL,
+                        model_settings_json TEXT NOT NULL,
+                        prompt_version TEXT NOT NULL,
+                        schema_version TEXT NOT NULL,
+                        retrieval_version TEXT NOT NULL,
+                        state TEXT NOT NULL CHECK (state IN ('succeeded', 'failed')),
+                        payload_json TEXT,
+                        safe_error_code TEXT,
+                        created_at TEXT NOT NULL,
+                        PRIMARY KEY (workspace_id, id),
+                        UNIQUE (workspace_id, action_id),
+                        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+                    );
                     CREATE TABLE IF NOT EXISTS action_outcomes (
                         workspace_id TEXT NOT NULL,
                         action_id TEXT NOT NULL,
@@ -255,16 +334,94 @@ class Repository:
                         "INSERT INTO domain_meta (key, value) VALUES ('schema_version', ?)",
                         (str(DOMAIN_SCHEMA_VERSION),),
                     )
+                elif int(current["value"]) == 1:
+                    self._migrate_v1_to_v2(connection)
+                    connection.execute(
+                        "UPDATE domain_meta SET value = ? WHERE key = 'schema_version'",
+                        (str(DOMAIN_SCHEMA_VERSION),),
+                    )
                 elif int(current["value"]) != DOMAIN_SCHEMA_VERSION:
                     raise RuntimeError("unsupported domain schema")
+                self._refresh_knowledge_metadata(connection)
         finally:
             connection.close()
+
+    def _migrate_v1_to_v2(self, connection: sqlite3.Connection) -> None:
+        """Apply only additive columns so existing workspaces and histories remain intact."""
+
+        additions = {
+            "workspaces": {
+                "lecture_case_item_id": "TEXT",
+            },
+            "knowledge_items": {
+                "title": "TEXT NOT NULL DEFAULT ''",
+                "source_kind": "TEXT NOT NULL DEFAULT 'document'",
+                "tags_json": "TEXT NOT NULL DEFAULT '[]'",
+                "registration_origin": "TEXT NOT NULL DEFAULT 'user_approved'",
+                "display_origin_label": "TEXT NOT NULL DEFAULT 'ユーザー承認'",
+            },
+            "proposals": {
+                "title": "TEXT",
+            },
+        }
+        for table, columns in additions.items():
+            existing = {
+                str(row["name"])
+                for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+            for column, declaration in columns.items():
+                if column not in existing:
+                    connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO conversation_states (
+                workspace_id, conversation_id, state_json, updated_at
+            )
+            SELECT workspace_id, id, '{}', created_at FROM conversations
+            """
+        )
+
+    def _refresh_knowledge_metadata(self, connection: sqlite3.Connection) -> None:
+        """Derive v2 display metadata for both newly and previously migrated databases."""
+
+        active_rows = connection.execute(
+            """
+            SELECT ki.workspace_id, ki.id, ki.display_number, ki.title,
+                   ki.source_kind, kv.facts_json
+            FROM knowledge_items ki JOIN knowledge_versions kv
+              ON kv.workspace_id = ki.workspace_id AND kv.item_id = ki.id
+             AND kv.version = ki.active_version
+            """
+        ).fetchall()
+        for row in active_rows:
+            facts = stored_facts_adapter.validate_json(row["facts_json"])
+            source_kind = self._source_kind_for_facts(connection, row["workspace_id"], facts)
+            title = row["title"] or f"知識項目{row['display_number']}"
+            if row["source_kind"] == source_kind and row["title"] == title:
+                continue
+            connection.execute(
+                """
+                UPDATE knowledge_items SET source_kind = ?, title = ?
+                WHERE workspace_id = ? AND id = ?
+                """,
+                (source_kind, title, row["workspace_id"], row["id"]),
+            )
 
     def create_workspace(
         self, session_id: str, *, seed_mode: str, seed_path: Path | None = None
     ) -> WorkspaceRecord:
-        if seed_mode not in {"from_scratch", "approved_v1"}:
+        if seed_mode not in {"from_scratch", "approved_v1", "practical_v5"}:
             raise ValueError("unknown seed mode")
+        if seed_mode == "practical_v5" and seed_path is None:
+            raise ValidationFailure(
+                "初期12件の教材seedが指定されていないため、新規領域を作成しません。",
+                code="seed_v5_missing",
+            )
+        if seed_mode == "from_scratch" and seed_path is not None:
+            raise ValidationFailure(
+                "空の領域には初期教材を指定できません。",
+                code="seed_unexpected",
+            )
         current = utc_now()
         workspace_id = str(uuid4())
         connection = connect_sqlite(self.path)
@@ -279,6 +436,7 @@ class Repository:
                         existing["session_id"],
                         existing["kb_revision"],
                         existing["seed_mode"],
+                        existing["lecture_case_item_id"],
                     )
                 connection.execute(
                     """
@@ -296,7 +454,7 @@ class Repository:
                 ).fetchone()["kb_revision"]
         finally:
             connection.close()
-        return WorkspaceRecord(workspace_id, session_id, revision, seed_mode)
+        return WorkspaceRecord(workspace_id, session_id, revision, seed_mode, None)
 
     def require_workspace(self, session_id: str, workspace_id: str) -> WorkspaceRecord:
         connection = connect_sqlite(self.path)
@@ -309,7 +467,13 @@ class Repository:
             connection.close()
         if row is None:
             raise AuthorizationError("指定された作業領域を利用できません。")
-        return WorkspaceRecord(row["id"], row["session_id"], row["kb_revision"], row["seed_mode"])
+        return WorkspaceRecord(
+            row["id"],
+            row["session_id"],
+            row["kb_revision"],
+            row["seed_mode"],
+            row["lecture_case_item_id"],
+        )
 
     def workspace_for_session(self, session_id: str) -> WorkspaceRecord | None:
         connection = connect_sqlite(self.path)
@@ -321,7 +485,13 @@ class Repository:
             connection.close()
         if row is None:
             return None
-        return WorkspaceRecord(row["id"], row["session_id"], row["kb_revision"], row["seed_mode"])
+        return WorkspaceRecord(
+            row["id"],
+            row["session_id"],
+            row["kb_revision"],
+            row["seed_mode"],
+            row["lecture_case_item_id"],
+        )
 
     def create_conversation(self, workspace_id: str, *, mode: str = "qa") -> str:
         conversation_id = str(uuid4())
@@ -333,6 +503,14 @@ class Repository:
                     "INSERT INTO conversations (workspace_id, id, mode, created_at) VALUES (?, ?, ?, ?)",
                     (workspace_id, conversation_id, mode, utc_now().isoformat()),
                 )
+                connection.execute(
+                    """
+                    INSERT INTO conversation_states (
+                        workspace_id, conversation_id, state_json, updated_at
+                    ) VALUES (?, ?, '{}', ?)
+                    """,
+                    (workspace_id, conversation_id, utc_now().isoformat()),
+                )
         finally:
             connection.close()
         return conversation_id
@@ -343,10 +521,20 @@ class Repository:
         workspace_id: str,
         *,
         seed_mode: str,
-        seed_path: Path,
+        seed_path: Path | None,
     ) -> tuple[WorkspaceRecord, str]:
-        if seed_mode not in {"from_scratch", "approved_v1"}:
+        if seed_mode not in {"from_scratch", "approved_v1", "practical_v5"}:
             raise ValueError("unknown seed mode")
+        if seed_mode == "practical_v5" and seed_path is None:
+            raise ValidationFailure(
+                "初期12件の教材seedが指定されていないため、領域を初期化しません。",
+                code="seed_v5_missing",
+            )
+        if seed_mode == "from_scratch" and seed_path is not None:
+            raise ValidationFailure(
+                "空の領域には初期教材を指定できません。",
+                code="seed_unexpected",
+            )
         connection = connect_sqlite(self.path)
         conversation_id = str(uuid4())
         try:
@@ -379,16 +567,21 @@ class Repository:
                     "DELETE FROM action_outcomes WHERE workspace_id = ?", (workspace_id,)
                 )
                 connection.execute(
+                    "DELETE FROM answer_snapshots WHERE workspace_id = ?", (workspace_id,)
+                )
+                connection.execute(
                     "DELETE FROM workspace_guards WHERE workspace_id = ?", (workspace_id,)
                 )
-                self._seed_workspace(connection, workspace_id, seed_path)
+                if seed_path is not None:
+                    self._seed_workspace(connection, workspace_id, seed_path)
                 if seed_mode == "approved_v1":
                     self._seed_item3_v1(connection, workspace_id)
                 revision = old_revision + 1
                 now = utc_now().isoformat()
                 connection.execute(
                     """
-                    UPDATE workspaces SET kb_revision = ?, seed_mode = ?, updated_at = ?
+                    UPDATE workspaces SET kb_revision = ?, seed_mode = ?,
+                        lecture_case_item_id = NULL, updated_at = ?
                     WHERE id = ?
                     """,
                     (revision, seed_mode, now, workspace_id),
@@ -397,9 +590,17 @@ class Repository:
                     "INSERT INTO conversations (workspace_id, id, mode, created_at) VALUES (?, ?, 'qa', ?)",
                     (workspace_id, conversation_id, now),
                 )
+                connection.execute(
+                    """
+                    INSERT INTO conversation_states (
+                        workspace_id, conversation_id, state_json, updated_at
+                    ) VALUES (?, ?, '{}', ?)
+                    """,
+                    (workspace_id, conversation_id, now),
+                )
         finally:
             connection.close()
-        return WorkspaceRecord(workspace_id, session_id, revision, seed_mode), conversation_id
+        return WorkspaceRecord(workspace_id, session_id, revision, seed_mode, None), conversation_id
 
     def append_message(
         self,
@@ -465,6 +666,51 @@ class Repository:
         finally:
             connection.close()
         return [dict(row) for row in reversed(rows)]
+
+    def get_conversation_state(self, workspace_id: str, conversation_id: str) -> ConversationState:
+        connection = connect_sqlite(self.path)
+        try:
+            row = connection.execute(
+                """
+                SELECT state_json FROM conversation_states
+                WHERE workspace_id = ? AND conversation_id = ?
+                """,
+                (workspace_id, conversation_id),
+            ).fetchone()
+        finally:
+            connection.close()
+        if row is None:
+            raise AuthorizationError("指定された相談状態を取得できません。")
+        try:
+            return ConversationState.model_validate_json(row["state_json"])
+        except ValidationError as exc:
+            raise ValidationFailure("相談状態の形式が破損しています。") from exc
+
+    def save_conversation_state(
+        self,
+        workspace_id: str,
+        conversation_id: str,
+        state: ConversationState,
+    ) -> None:
+        connection = connect_sqlite(self.path)
+        try:
+            with transaction(connection, immediate=True):
+                changed = connection.execute(
+                    """
+                    UPDATE conversation_states SET state_json = ?, updated_at = ?
+                    WHERE workspace_id = ? AND conversation_id = ?
+                    """,
+                    (
+                        state.model_dump_json(),
+                        utc_now().isoformat(),
+                        workspace_id,
+                        conversation_id,
+                    ),
+                ).rowcount
+                if changed != 1:
+                    raise AuthorizationError("指定された相談状態を更新できません。")
+        finally:
+            connection.close()
 
     def register_source(
         self,
@@ -594,7 +840,22 @@ class Repository:
             connection.close()
         if row is None:
             raise AuthorizationError("指定された知識版を取得できません。")
-        return self._knowledge_from_row(row)
+        record = self._knowledge_from_row(row)
+        segment_ids = list(
+            dict.fromkeys(ref.segment_id for fact in record.facts for ref in fact.evidence_refs)
+        )
+        source_kinds = {
+            str(segment["kind"]) for segment in self.read_segments(workspace_id, segment_ids)
+        }
+        if source_kinds == {"document"}:
+            version_source_kind = "document"
+        elif source_kinds == {"interview"}:
+            version_source_kind = "interview"
+        elif source_kinds == {"document", "interview"}:
+            version_source_kind = "mixed"
+        else:
+            raise ValidationFailure("知識版の根拠由来を判定できません。")
+        return replace(record, source_kind=version_source_kind)
 
     def allowed_evidence_ids(self, workspace_id: str) -> set[str]:
         allowed: set[str] = set()
@@ -627,6 +888,47 @@ class Repository:
             raise AuthorizationError("取得できない根拠が含まれています。")
         return [by_id[item] for item in ids]
 
+    def read_source_transcripts(
+        self, workspace_id: str, evidence_segment_ids: Iterable[str]
+    ) -> list[dict[str, Any]]:
+        """Read full source transcripts anchored by known evidence segments.
+
+        This is a read-only UI operation. Agent evidence access continues to return only
+        approved evidence IDs and never broadens from an answer to an assistant question.
+        """
+
+        ids = list(dict.fromkeys(evidence_segment_ids))
+        if not ids:
+            return []
+        placeholders = ",".join("?" for _ in ids)
+        connection = connect_sqlite(self.path)
+        try:
+            anchor_rows = connection.execute(
+                f"""
+                SELECT id, source_id FROM source_segments
+                WHERE workspace_id = ? AND id IN ({placeholders})
+                """,  # noqa: S608 - placeholders are generated from list length only
+                [workspace_id, *ids],
+            ).fetchall()
+            if {str(row["id"]) for row in anchor_rows} != set(ids):
+                raise AuthorizationError("取得できない根拠が含まれています。")
+            source_ids = list(dict.fromkeys(str(row["source_id"]) for row in anchor_rows))
+            source_placeholders = ",".join("?" for _ in source_ids)
+            rows = connection.execute(
+                f"""
+                SELECT ss.id, ss.ordinal, ss.speaker, ss.text, ss.text_sha256,
+                       s.id AS source_id, s.title, s.kind, s.equipment, s.case_label
+                FROM source_segments ss JOIN sources s
+                  ON s.workspace_id = ss.workspace_id AND s.id = ss.source_id
+                WHERE ss.workspace_id = ? AND ss.source_id IN ({source_placeholders})
+                ORDER BY s.created_at, ss.ordinal
+                """,  # noqa: S608 - placeholders are generated from validated source ids
+                [workspace_id, *source_ids],
+            ).fetchall()
+        finally:
+            connection.close()
+        return [dict(row) for row in rows]
+
     def stage_proposal(
         self,
         workspace_id: str,
@@ -641,14 +943,38 @@ class Repository:
         missing_fields: list[str],
         cause_status: CauseStatus,
         allowed_segment_ids: set[str],
+        title: str | None = None,
     ) -> ProposalRecord:
         if not operations:
             raise ValidationFailure("変更内容が空です。")
+        payload = {
+            "target_item_id": target_item_id,
+            "base_version": base_version,
+            "operations": [op.model_dump(mode="json") for op in operations],
+            "reason": reason,
+            "equipment": equipment,
+            "case_label": case_label,
+            "title": title,
+            "missing_fields": missing_fields,
+            "cause_status": cause_status.value,
+        }
+        content_hash = sha256_text(canonical_json(payload))
         connection = connect_sqlite(self.path)
         proposal_id = str(uuid4())
         try:
             with transaction(connection, immediate=True):
                 self._assert_workspace(connection, workspace_id)
+                existing = connection.execute(
+                    "SELECT * FROM proposals WHERE workspace_id = ? AND action_id = ?",
+                    (workspace_id, action_id),
+                ).fetchone()
+                if existing is not None:
+                    if existing["content_hash"] != content_hash:
+                        raise ValidationFailure(
+                            "同じ操作IDに異なる更新案を作成できません。",
+                            code="proposal_action_conflict",
+                        )
+                    return self._proposal_from_row(existing)
                 pending_count = connection.execute(
                     """
                     SELECT COUNT(*) AS count FROM proposals
@@ -689,24 +1015,13 @@ class Repository:
                             operation.new_fact,
                             allowed_segment_ids,
                         )
-                payload = {
-                    "target_item_id": target_item_id,
-                    "base_version": base_version,
-                    "operations": [op.model_dump(mode="json") for op in operations],
-                    "reason": reason,
-                    "equipment": equipment,
-                    "case_label": case_label,
-                    "missing_fields": missing_fields,
-                    "cause_status": cause_status.value,
-                }
-                content_hash = sha256_text(canonical_json(payload))
                 connection.execute(
                     """
                     INSERT INTO proposals (
                         workspace_id, id, target_item_id, base_version, operations_json,
                         reason, status, content_hash, equipment, case_label,
-                        missing_fields_json, cause_status, created_at, action_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, 'staged', ?, ?, ?, ?, ?, ?, ?)
+                        title, missing_fields_json, cause_status, created_at, action_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'staged', ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         workspace_id,
@@ -718,6 +1033,7 @@ class Repository:
                         content_hash,
                         equipment,
                         case_label,
+                        title,
                         canonical_json(missing_fields),
                         cause_status.value,
                         utc_now().isoformat(),
@@ -841,13 +1157,17 @@ class Repository:
                     connection.execute(
                         """
                         INSERT INTO knowledge_items (
-                            workspace_id, id, display_number, equipment, case_label, active_version
-                        ) VALUES (?, ?, ?, ?, ?, 0)
+                            workspace_id, id, display_number, title, equipment, case_label,
+                            source_kind, tags_json, registration_origin,
+                            display_origin_label, active_version
+                        ) VALUES (?, ?, ?, ?, ?, ?, 'document', '[]',
+                                  'user_approved', '利用者が承認', 0)
                         """,
                         (
                             workspace_id,
                             target_id,
                             display_number,
+                            proposal["title"] or f"{proposal['equipment']}の知識",
                             proposal["equipment"],
                             proposal["case_label"],
                         ),
@@ -863,11 +1183,7 @@ class Repository:
                         raise AuthorizationError("更新対象を取得できません。")
                     before_version = item["active_version"]
                     if before_version != proposal["base_version"]:
-                        connection.execute(
-                            "UPDATE proposals SET status = 'stale' WHERE workspace_id = ? AND id = ?",
-                            (workspace_id, proposal_id),
-                        )
-                        raise ValidationFailure("現行版が進んだため、この更新案はstaleです。")
+                        raise _StaleProposalError
                     version_row = connection.execute(
                         """
                         SELECT facts_json FROM knowledge_versions
@@ -880,6 +1196,7 @@ class Repository:
                 facts = self._apply_operations(
                     connection, workspace_id, facts, operations, allowed_segments
                 )
+                source_kind = self._source_kind_for_facts(connection, workspace_id, facts)
                 after_version = before_version + 1
                 facts_payload = [fact.model_dump(mode="json") for fact in facts]
                 version_payload = {
@@ -909,10 +1226,10 @@ class Repository:
                 )
                 connection.execute(
                     """
-                    UPDATE knowledge_items SET active_version = ?
+                    UPDATE knowledge_items SET active_version = ?, source_kind = ?
                     WHERE workspace_id = ? AND id = ?
                     """,
-                    (after_version, workspace_id, target_id),
+                    (after_version, source_kind, workspace_id, target_id),
                 )
                 event_id = str(uuid4())
                 connection.execute(
@@ -937,6 +1254,15 @@ class Repository:
                     (target_id, workspace_id, proposal_id),
                 )
                 revision = workspace["kb_revision"] + 1
+                if (
+                    before_version == 0
+                    and workspace["seed_mode"] == "practical_v5"
+                    and workspace["lecture_case_item_id"] is None
+                ):
+                    connection.execute(
+                        "UPDATE workspaces SET lecture_case_item_id = ? WHERE id = ?",
+                        (target_id, workspace_id),
+                    )
                 connection.execute(
                     """
                     UPDATE workspaces SET kb_revision = ?, updated_at = ? WHERE id = ?
@@ -946,6 +1272,19 @@ class Repository:
                 return ApprovalResult(
                     proposal_id, target_id, before_version, after_version, revision, False
                 )
+        except _StaleProposalError:
+            with transaction(connection, immediate=True):
+                connection.execute(
+                    """
+                    UPDATE proposals SET status = 'stale'
+                    WHERE workspace_id = ? AND id = ? AND status = 'pending'
+                    """,
+                    (workspace_id, proposal_id),
+                )
+            raise ValidationFailure(
+                "現行版が進んだため、この更新案はstaleです。",
+                code="proposal_stale",
+            ) from None
         except sqlite3.IntegrityError as exc:
             raise ValidationFailure("承認処理の整合性検査に失敗しました。") from exc
         finally:
@@ -1156,6 +1495,53 @@ class Repository:
                             utc_now().isoformat(),
                         ),
                     )
+                    state_row = connection.execute(
+                        """
+                        SELECT state_json FROM conversation_states
+                        WHERE workspace_id = ? AND conversation_id = ?
+                        """,
+                        (workspace_id, str(payload.get("conversation_id"))),
+                    ).fetchone()
+                    if state_row is not None:
+                        state = ConversationState.model_validate_json(state_row["state_json"])
+                        candidate_ids = [
+                            str(candidate.get("knowledge_id"))
+                            for candidate in selection.get("candidates", [])
+                            if isinstance(candidate, dict)
+                            and isinstance(candidate.get("knowledge_id"), str)
+                        ]
+                        state = state.model_copy(
+                            update={
+                                "focus_answer_id": action_id,
+                                "focus_knowledge_ids": candidate_ids[:3],
+                                "reference_is_ambiguous": False,
+                            }
+                        )
+                        connection.execute(
+                            """
+                            UPDATE conversation_states SET state_json = ?, updated_at = ?
+                            WHERE workspace_id = ? AND conversation_id = ?
+                            """,
+                            (
+                                state.model_dump_json(),
+                                utc_now().isoformat(),
+                                workspace_id,
+                                str(payload.get("conversation_id")),
+                            ),
+                        )
+                    comparison = payload.get("comparison")
+                    if comparison is not None:
+                        if not isinstance(comparison, dict):
+                            raise ValidationFailure("比較記録の形式が不正です。")
+                        self._insert_answer_snapshot(
+                            connection,
+                            workspace_id=workspace_id,
+                            action_id=action_id,
+                            state="succeeded",
+                            comparison=comparison,
+                            payload=payload,
+                            safe_error_code=None,
+                        )
                 connection.execute(
                     "UPDATE workspace_guards SET active = 0 WHERE workspace_id = ?",
                     (workspace_id,),
@@ -1186,6 +1572,53 @@ class Repository:
         value["payload"] = json.loads(value.pop("payload_json"))
         return value
 
+    def list_answer_snapshots(self, workspace_id: str) -> list[AnswerSnapshotRecord]:
+        connection = connect_sqlite(self.path)
+        try:
+            rows = connection.execute(
+                """
+                SELECT * FROM answer_snapshots
+                WHERE workspace_id = ? ORDER BY created_at, id
+                """,
+                (workspace_id,),
+            ).fetchall()
+        finally:
+            connection.close()
+        return [self._answer_snapshot_from_row(row) for row in rows]
+
+    def record_answer_snapshot_failure(
+        self,
+        workspace_id: str,
+        *,
+        action_id: str,
+        comparison: dict[str, Any],
+        safe_error_code: str,
+    ) -> None:
+        connection = connect_sqlite(self.path)
+        try:
+            with transaction(connection, immediate=True):
+                self._assert_workspace(connection, workspace_id)
+                self._insert_answer_snapshot(
+                    connection,
+                    workspace_id=workspace_id,
+                    action_id=action_id,
+                    state="failed",
+                    comparison=comparison,
+                    payload=None,
+                    safe_error_code=safe_error_code,
+                )
+        finally:
+            connection.close()
+
+    def knowledge_stats(self, workspace_id: str) -> dict[str, object]:
+        items = self.list_knowledge(workspace_id)
+        return {
+            "knowledge_count": len(items),
+            "source_counts": dict(Counter(item.source_kind for item in items)),
+            "equipment_count": len({item.equipment for item in items}),
+            "equipment_counts": dict(Counter(item.equipment for item in items)),
+        }
+
     def abort_staged_by_action(self, workspace_id: str, action_id: str) -> None:
         connection = connect_sqlite(self.path)
         try:
@@ -1203,7 +1636,16 @@ class Repository:
     def _seed_workspace(
         self, connection: sqlite3.Connection, workspace_id: str, path: Path
     ) -> None:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValidationFailure(
+                "初期教材seedを読み取れないため、新規領域を作成しません。",
+                code="seed_invalid",
+            ) from exc
+        if payload.get("fixture_schema") == "wg4-seed-manifest-v5-proposal":
+            self._seed_v5_workspace(connection, workspace_id, load_v5_seed(path))
+            return
         segment_ids: dict[str, str] = {}
         segment_texts: dict[str, str] = {}
         for source in payload["approved_sources"]:
@@ -1289,13 +1731,17 @@ class Repository:
             connection.execute(
                 """
                 INSERT INTO knowledge_items (
-                    workspace_id, id, display_number, equipment, case_label, active_version
-                ) VALUES (?, ?, ?, ?, ?, 1)
+                    workspace_id, id, display_number, title, equipment, case_label,
+                    source_kind, tags_json, registration_origin,
+                    display_origin_label, active_version
+                ) VALUES (?, ?, ?, ?, ?, ?, 'document', '[]',
+                          'synthetic_fixture', '初期収録（架空教材）', 1)
                 """,
                 (
                     workspace_id,
                     item_id,
                     display_number,
+                    card["display_name"],
                     card["equipment"],
                     card["case_label"],
                 ),
@@ -1307,6 +1753,117 @@ class Repository:
                 facts,
                 CauseStatus(card["cause_status"]),
                 missing_fields=[],
+            )
+        connection.execute(
+            "UPDATE workspaces SET kb_revision = 1, updated_at = ? WHERE id = ?",
+            (utc_now().isoformat(), workspace_id),
+        )
+
+    def _seed_v5_workspace(
+        self,
+        connection: sqlite3.Connection,
+        workspace_id: str,
+        manifest: V5SeedManifest,
+    ) -> None:
+        segment_ids: dict[str, str] = {}
+        segment_texts: dict[str, str] = {}
+        for source in manifest.sources:
+            source_id = str(uuid4())
+            connection.execute(
+                """
+                INSERT INTO sources (
+                    workspace_id, id, external_key, title, kind, equipment, case_label, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    workspace_id,
+                    source_id,
+                    source.key,
+                    source.title,
+                    source.kind,
+                    source.equipment_label,
+                    source.case_label,
+                    utc_now().isoformat(),
+                ),
+            )
+            for ordinal, segment in enumerate(source.segments, start=1):
+                segment_id = str(uuid4())
+                normalized = segment.text.replace("\r\n", "\n").replace("\r", "\n")
+                segment_ids[segment.key] = segment_id
+                segment_texts[segment.key] = normalized
+                connection.execute(
+                    """
+                    INSERT INTO source_segments (
+                        workspace_id, id, external_key, source_id, ordinal,
+                        speaker, text, text_sha256
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        workspace_id,
+                        segment_id,
+                        segment.key,
+                        source_id,
+                        ordinal,
+                        segment.speaker,
+                        normalized,
+                        sha256_text(normalized),
+                    ),
+                )
+
+        for item in manifest.knowledge_items:
+            facts: list[StoredFact] = []
+            for fact in item.facts:
+                refs: list[EvidenceRef] = []
+                for evidence in fact.evidence:
+                    source_text = segment_texts[evidence.segment_key]
+                    start = source_text.index(evidence.quote)
+                    refs.append(
+                        EvidenceRef(
+                            segment_id=segment_ids[evidence.segment_key],
+                            quote=evidence.quote,
+                            start_char=start,
+                            end_char=start + len(evidence.quote),
+                        )
+                    )
+                facts.append(
+                    StoredFact(
+                        id=str(uuid4()),
+                        kind=fact.kind,
+                        text=fact.text,
+                        condition_scope=fact.condition_scope,
+                        evidence_refs=refs,
+                    )
+                )
+            item_id = str(uuid4())
+            connection.execute(
+                """
+                INSERT INTO knowledge_items (
+                    workspace_id, id, display_number, title, equipment, case_label,
+                    source_kind, tags_json, registration_origin,
+                    display_origin_label, active_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                """,
+                (
+                    workspace_id,
+                    item_id,
+                    item.display_number,
+                    item.title,
+                    item.equipment_label,
+                    item.case_label,
+                    item.source_kind,
+                    canonical_json(item.tags),
+                    item.registration_origin,
+                    manifest.import_contract.status_label,
+                ),
+            )
+            self._insert_fixture_version(
+                connection,
+                workspace_id,
+                item_id,
+                facts,
+                item.cause_status,
+                missing_fields=item.missing_fields,
+                approved_by=manifest.import_contract.seed_actor,
             )
         connection.execute(
             "UPDATE workspaces SET kb_revision = 1, updated_at = ? WHERE id = ?",
@@ -1388,8 +1945,10 @@ class Repository:
         connection.execute(
             """
             INSERT INTO knowledge_items (
-                workspace_id, id, display_number, equipment, case_label, active_version
-            ) VALUES (?, ?, ?, '冷却器1', '事例1', 1)
+                workspace_id, id, display_number, title, equipment, case_label,
+                source_kind, registration_origin, display_origin_label, active_version
+            ) VALUES (?, ?, ?, '温度計交換後の出口温度表示', '冷却器1', '事例1',
+                      'interview', 'synthetic_fixture', '初期収録（架空教材）', 1)
             """,
             (workspace_id, item_id, next_number),
         )
@@ -1415,6 +1974,7 @@ class Repository:
         cause_status: CauseStatus,
         *,
         missing_fields: list[str],
+        approved_by: str = "fixture_author",
     ) -> None:
         facts_json = canonical_json([fact.model_dump(mode="json") for fact in facts])
         version_payload = {
@@ -1427,7 +1987,7 @@ class Repository:
             INSERT INTO knowledge_versions (
                 workspace_id, item_id, version, facts_json, missing_fields_json,
                 cause_status, approved_at, approved_by, proposal_id, content_hash
-            ) VALUES (?, ?, 1, ?, ?, ?, ?, 'fixture_author', NULL, ?)
+            ) VALUES (?, ?, 1, ?, ?, ?, ?, ?, NULL, ?)
             """,
             (
                 workspace_id,
@@ -1436,6 +1996,7 @@ class Repository:
                 canonical_json(missing_fields),
                 cause_status.value,
                 utc_now().isoformat(),
+                approved_by,
                 sha256_text(canonical_json(version_payload)),
             ),
         )
@@ -1536,11 +2097,13 @@ class Repository:
         evidence: EvidenceDraft,
     ) -> EvidenceRef:
         row = connection.execute(
-            "SELECT text FROM source_segments WHERE workspace_id = ? AND id = ?",
+            "SELECT text, speaker FROM source_segments WHERE workspace_id = ? AND id = ?",
             (workspace_id, evidence.segment_id),
         ).fetchone()
         if row is None:
             raise ValidationFailure("存在しない根拠IDです。")
+        if row["speaker"] == "assistant":
+            raise ValidationFailure("AIの質問文は知識factの根拠にできません。")
         text = row["text"]
         occurrences = text.count(evidence.quote)
         if occurrences != 1:
@@ -1565,6 +2128,133 @@ class Repository:
             ).fetchall()
         }
 
+    def _source_kind_for_facts(
+        self,
+        connection: sqlite3.Connection,
+        workspace_id: str,
+        facts: list[StoredFact],
+    ) -> str:
+        segment_ids = list(
+            dict.fromkeys(ref.segment_id for fact in facts for ref in fact.evidence_refs)
+        )
+        if not segment_ids:
+            raise ValidationFailure("知識項目に根拠がありません。")
+        placeholders = ",".join("?" for _ in segment_ids)
+        rows = connection.execute(
+            f"""
+            SELECT DISTINCT s.kind
+            FROM source_segments ss JOIN sources s
+              ON s.workspace_id = ss.workspace_id AND s.id = ss.source_id
+            WHERE ss.workspace_id = ? AND ss.id IN ({placeholders})
+            """,  # noqa: S608 - placeholders are generated from the validated list length
+            [workspace_id, *segment_ids],
+        ).fetchall()
+        kinds = {str(row["kind"]) for row in rows}
+        if kinds == {"document"}:
+            return "document"
+        if kinds == {"interview"}:
+            return "interview"
+        if kinds == {"document", "interview"}:
+            return "mixed"
+        raise ValidationFailure("知識項目の根拠由来を判定できません。")
+
+    def _insert_answer_snapshot(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        workspace_id: str,
+        action_id: str,
+        state: str,
+        comparison: dict[str, Any],
+        payload: dict[str, Any] | None,
+        safe_error_code: str | None,
+    ) -> None:
+        stage = comparison.get("stage")
+        if stage not in {"A", "B", "C"}:
+            raise ValidationFailure("比較段階はA、B、Cのいずれかです。")
+        question = comparison.get("question")
+        conversation_id = comparison.get("conversation_id")
+        model_id = comparison.get("model_id")
+        prompt_version = comparison.get("prompt_version")
+        schema_version = comparison.get("schema_version")
+        retrieval_version = comparison.get("retrieval_version")
+        model_settings = comparison.get("model_settings")
+        if not all(
+            isinstance(value, str) and value
+            for value in (
+                question,
+                conversation_id,
+                model_id,
+                prompt_version,
+                schema_version,
+                retrieval_version,
+            )
+        ) or not isinstance(model_settings, dict):
+            raise ValidationFailure("比較実行の設定記録が不足しています。")
+        target_item_id = comparison.get("target_item_id")
+        target_version = comparison.get("target_version")
+        if target_item_id is not None and not isinstance(target_item_id, str):
+            raise ValidationFailure("比較対象の知識IDが不正です。")
+        if target_version is not None and not isinstance(target_version, int):
+            raise ValidationFailure("比較対象の版が不正です。")
+        question_text = cast(str, question)
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO answer_snapshots (
+                workspace_id, id, stage, action_id, question, question_hash,
+                conversation_id, empty_history, kb_revision, target_item_id,
+                target_version, model_id, model_settings_json, prompt_version,
+                schema_version, retrieval_version, state, payload_json,
+                safe_error_code, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                workspace_id,
+                str(uuid4()),
+                stage,
+                action_id,
+                question_text,
+                sha256_text(question_text),
+                conversation_id,
+                1 if comparison.get("empty_history") is True else 0,
+                int(comparison.get("kb_revision", 0)),
+                target_item_id,
+                target_version,
+                model_id,
+                canonical_json(model_settings),
+                prompt_version,
+                schema_version,
+                retrieval_version,
+                state,
+                canonical_json(payload) if payload is not None else None,
+                safe_error_code,
+                utc_now().isoformat(),
+            ),
+        )
+
+    def _answer_snapshot_from_row(self, row: sqlite3.Row) -> AnswerSnapshotRecord:
+        return AnswerSnapshotRecord(
+            id=row["id"],
+            stage=row["stage"],
+            action_id=row["action_id"],
+            question=row["question"],
+            question_hash=row["question_hash"],
+            conversation_id=row["conversation_id"],
+            empty_history=bool(row["empty_history"]),
+            kb_revision=row["kb_revision"],
+            target_item_id=row["target_item_id"],
+            target_version=row["target_version"],
+            model_id=row["model_id"],
+            model_settings=json.loads(row["model_settings_json"]),
+            prompt_version=row["prompt_version"],
+            schema_version=row["schema_version"],
+            retrieval_version=row["retrieval_version"],
+            state=row["state"],
+            payload=json.loads(row["payload_json"]) if row["payload_json"] else None,
+            safe_error_code=row["safe_error_code"],
+            created_at=row["created_at"],
+        )
+
     def _assert_workspace(self, connection: sqlite3.Connection, workspace_id: str) -> sqlite3.Row:
         row = connection.execute(
             "SELECT * FROM workspaces WHERE id = ?", (workspace_id,)
@@ -1582,8 +2272,14 @@ class Repository:
             workspace_id=row["workspace_id"],
             id=row["id"],
             display_name=f"知識項目{row['display_number']}",
+            display_number=row["display_number"],
+            title=row["title"] or f"知識項目{row['display_number']}",
             equipment=row["equipment"],
             case_label=row["case_label"],
+            source_kind=row["source_kind"],
+            tags=json.loads(row["tags_json"]),
+            registration_origin=row["registration_origin"],
+            origin_label=row["display_origin_label"],
             version=row["active_version"],
             facts=facts,
             missing_fields=json.loads(row["missing_fields_json"]),
@@ -1602,6 +2298,7 @@ class Repository:
             content_hash=row["content_hash"],
             equipment=row["equipment"],
             case_label=row["case_label"],
+            title=row["title"],
             missing_fields=json.loads(row["missing_fields_json"]),
             cause_status=CauseStatus(row["cause_status"]),
         )

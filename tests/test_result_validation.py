@@ -116,3 +116,75 @@ def test_applicable_top_search_hit_must_be_first_candidate(
     with pytest.raises(ValidationFailure) as exc_info:
         ResultValidator(repository).validate_answer(workspace.id, answer, trace)
     assert exc_info.value.code == "validation_top_candidate_missing"
+
+
+def test_reason_followup_uses_focus_without_forcing_search_rank_one(
+    repository: Repository, participant: SessionRecord, project_root: Path
+) -> None:
+    workspace = repository.create_workspace(
+        participant.id,
+        seed_mode="practical_v5",
+        seed_path=project_root / "data" / "knowledge_seed_v5.json",
+    )
+    retrieval = RetrievalService(repository, project_root / "data" / "vocabulary.json")
+    search = retrieval.search_knowledge(workspace.id, "起動直後の記録を別に探す理由")
+    assert len(search.hits) >= 2
+    focused_hit = search.hits[1]
+    assert focused_hit.knowledge_id != search.hits[0].knowledge_id
+    item = repository.get_knowledge(workspace.id, focused_hit.knowledge_id, focused_hit.version)
+    action = next(fact for fact in item.facts if fact.kind is FactKind.CHECK_ACTION)
+    conditions = [
+        fact.id
+        for fact in item.facts
+        if fact.kind is FactKind.CONDITION
+        and fact.condition_scope
+        in {
+            ConditionScope.CASE_CONTEXT,
+            ConditionScope.APPLICABILITY,
+            ConditionScope.ACTION_PREREQUISITE,
+        }
+    ]
+    supporting = [
+        fact.id for fact in item.facts if fact.kind in {FactKind.EXCEPTION, FactKind.CAUSE_STATUS}
+    ]
+    selected_ids = {action.id, *conditions, *supporting}
+    evidence_ids = list(
+        dict.fromkeys(
+            ref.segment_id
+            for fact in item.facts
+            if fact.id in selected_ids
+            for ref in fact.evidence_refs
+        )
+    )
+    answer = AnswerSelection(
+        intent="reason_explanation",
+        status="candidates",
+        candidates=[
+            AnswerCandidate(
+                knowledge_id=item.id,
+                version=item.version,
+                action_fact_id=action.id,
+                condition_fact_ids=conditions,
+                supporting_fact_ids=supporting,
+                evidence_segment_ids=evidence_ids,
+            )
+        ],
+        clarification_requests=[],
+        conflicting_fact_ids=[],
+    )
+    trace = ToolTrace(
+        search_result=search,
+        context_versions={(item.id, item.version)},
+        evidence_ids=set(evidence_ids),
+        calls=["search_knowledge", "get_context", "read_evidence"],
+    )
+
+    validated = ResultValidator(repository).validate_answer(
+        workspace.id,
+        answer,
+        trace,
+        expected_intent="reason_explanation",
+        focus_knowledge_ids={item.id},
+    )
+
+    assert validated.candidates[0].knowledge_id == item.id

@@ -63,34 +63,43 @@ def main() -> None:
             f"推論: {services.settings.openai_reasoning_effort} / "
             f"KB改訂: {workspace.kb_revision} / 会話: {st.session_state.conversation_id[:8]}"
         )
-        with st.expander("デモの操作順（画面の選び方）", expanded=True):
+        with st.expander("主実演の流れ", expanded=True):
             st.markdown(
                 """
-1. **文書・経験を登録**：抽出 → 追加質問 → 回答反映
-2. **更新案を確認**：最初のpending案を確認し、v1として承認
-3. **質問して使う**：v1を使って主質問に回答
-4. **更新案を確認**：新しい発言から更新案を作り、v2として承認
-5. **質問して使う**：「新しい会話」後に同じ質問を実行
+1. **知識を探す**：初期12件を非課金で検索し、原文を見る
+2. **エージェントに相談する**：根拠付き候補へ追質問する
+3. **知識を追加・補足する**：文書版A → 本人役の理由・範囲
+4. **更新案・実回答比較**：人が承認し、A/B/Cの実記録を比べる
 
-**知識を確認**は、承認済みの内容と原文根拠を途中確認するときに使います。
+四段階ガイドは同じ処理への案内です。未承認情報は通常検索へ入りません。
                 """
             )
+        pages = [
+            "知識を探す",
+            "エージェントに相談する",
+            "知識を追加・補足する",
+            "更新案・実回答比較",
+            "管理",
+        ]
+        if st.session_state.get("nav_page") not in pages:
+            st.session_state.nav_page = pages[0]
         page = st.radio(
             "画面",
-            ["文書・経験を登録", "知識を確認", "質問して使う", "更新案を確認", "管理"],
+            pages,
+            key="nav_page",
         )
         if st.button("ログアウト"):
             services.auth.logout(session_id)
             st.session_state.clear()
             st.rerun()
     render_job_status(services)
-    if page == "文書・経験を登録":
-        register.render(services, PROJECT_ROOT)
-    elif page == "知識を確認":
+    if page == "知識を探す":
         knowledge.render(services, PROJECT_ROOT)
-    elif page == "質問して使う":
+    elif page == "エージェントに相談する":
         qa.render(services, PROJECT_ROOT)
-    elif page == "更新案を確認":
+    elif page == "知識を追加・補足する":
+        register.render(services, PROJECT_ROOT)
+    elif page == "更新案・実回答比較":
         review.render(services, PROJECT_ROOT)
     else:
         admin.render(services)

@@ -175,3 +175,44 @@ def test_running_cancel_discards_late_result(
     finally:
         release.set()
         scheduler.stop()
+
+
+def test_stale_queued_job_is_terminal_and_scheduler_continues(
+    settings: Settings, auth: AuthService, repository: Repository
+) -> None:
+    session = auth.login("participant-secret", role=Role.PARTICIPANT, client_token="stale-queued")
+    workspace = repository.create_workspace(session.id, seed_mode="from_scratch")
+    jobs = JobService(settings.control_db_path, settings, auth, repository)
+    stale = enqueue_job(jobs, repository, session.id, workspace.id, dedupe_key="stale")
+    repository.reset_workspace(
+        session.id,
+        workspace.id,
+        seed_mode="from_scratch",
+        seed_path=None,
+    )
+    seen: list[str] = []
+
+    def handler(job):
+        seen.append(job.job_id)
+        return "fake_result", {"job": job.job_id}
+
+    scheduler = Scheduler(jobs, repository, {"fake": handler}, max_workers=1)
+    scheduler.start()
+    try:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if jobs.get(session_id=session.id, job_id=stale.job_id).state is JobState.STALE_CONTEXT:
+                break
+            time.sleep(0.02)
+        assert jobs.get(session_id=session.id, job_id=stale.job_id).state is JobState.STALE_CONTEXT
+        fresh = enqueue_job(jobs, repository, session.id, workspace.id, dedupe_key="fresh")
+        scheduler.wake()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if jobs.get(session_id=session.id, job_id=fresh.job_id).state is JobState.SUCCEEDED:
+                break
+            time.sleep(0.02)
+        assert jobs.get(session_id=session.id, job_id=fresh.job_id).state is JobState.SUCCEEDED
+    finally:
+        scheduler.stop()
+    assert seen == [fresh.job_id]

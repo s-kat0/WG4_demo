@@ -26,9 +26,7 @@ class GraphService:
         self.repository = repository
 
     def get_context(self, workspace_id: str, knowledge_id: str, version: int) -> GraphResult:
-        item = self.repository.get_knowledge(workspace_id, knowledge_id)
-        if item.version != version:
-            raise ValueError("only the active version is available to QA")
+        item = self.repository.get_knowledge(workspace_id, knowledge_id, version)
         graph = self._build(item)
         descendants = nx.descendants(graph, self._item_node(item))
         subgraph = graph.subgraph({self._item_node(item), *descendants}).copy()

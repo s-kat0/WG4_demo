@@ -37,6 +37,9 @@ class JobRecord:
     input_sha256: str
     kb_revision: int
     model_id: str
+    model_settings: dict[str, Any]
+    prompt_version: str
+    schema_version: str
     state: JobState
     created_at: datetime
     queue_deadline_at: datetime
@@ -68,11 +71,12 @@ class JobService:
     def recover_interrupted_jobs(self, *, now: datetime | None = None) -> int:
         current = now or datetime.now(UTC)
         connection = connect_sqlite(self.control_db)
+        interrupted: list[JobRecord] = []
         try:
             with transaction(connection, immediate=True):
                 rows = connection.execute(
                     """
-                    SELECT job_id, workspace_id, action_id FROM jobs
+                    SELECT * FROM jobs
                     WHERE state IN ('queued', 'running', 'cancel_requested')
                       AND coordinator_epoch <> ?
                     """,
@@ -87,10 +91,17 @@ class JobService:
                         """,
                         (current.isoformat(), row["job_id"]),
                     )
-                    self.repository.invalidate_action_guard(row["workspace_id"], row["action_id"])
-                return len(rows)
+                    updated = connection.execute(
+                        "SELECT * FROM jobs WHERE job_id = ?", (row["job_id"],)
+                    ).fetchone()
+                    interrupted.append(self._job_from_row(updated))
         finally:
             connection.close()
+        for job in interrupted:
+            self.repository.invalidate_action_guard(job.workspace_id, job.action_id)
+            self.repository.abort_staged_by_action(job.workspace_id, job.action_id)
+            self._record_comparison_failure(job, "process_restarted")
+        return len(interrupted)
 
     def enqueue(
         self,
@@ -195,6 +206,8 @@ class JobService:
     def claim_next(self, worker_id: str, *, now: datetime | None = None) -> JobRecord | None:
         current = now or datetime.now(UTC)
         connection = connect_sqlite(self.control_db)
+        rejected: list[JobRecord] = []
+        claimed_job: JobRecord | None = None
         try:
             with transaction(connection, immediate=True):
                 running = connection.execute(
@@ -203,9 +216,7 @@ class JobService:
                     WHERE state IN ('running', 'cancel_requested')
                     """
                 ).fetchone()["count"]
-                if running >= self.settings.max_concurrent_jobs:
-                    return None
-                while True:
+                while running < self.settings.max_concurrent_jobs:
                     row = connection.execute(
                         """
                         SELECT j.*, a.expires_at AS session_expires_at,
@@ -217,7 +228,7 @@ class JobService:
                         (self.coordinator_epoch,),
                     ).fetchone()
                     if row is None:
-                        return None
+                        break
                     reason = self._dequeue_rejection(row, current)
                     if reason is not None:
                         state, code = reason
@@ -230,6 +241,10 @@ class JobService:
                             (state.value, current.isoformat(), code, row["job_id"]),
                         )
                         self._event(connection, row["job_id"], state, code, current)
+                        updated = connection.execute(
+                            "SELECT * FROM jobs WHERE job_id = ?", (row["job_id"],)
+                        ).fetchone()
+                        rejected.append(self._job_from_row(updated))
                         continue
                     claim_token = str(uuid4())
                     run_deadline = current + timedelta(seconds=self.settings.action_timeout_seconds)
@@ -250,19 +265,47 @@ class JobService:
                     ).rowcount
                     if changed != 1:
                         continue
-                    self.repository.begin_action_guard(
-                        row["workspace_id"],
-                        action_id=row["action_id"],
-                        claim_token=claim_token,
-                        kb_revision=row["kb_revision"],
-                    )
+                    try:
+                        self.repository.begin_action_guard(
+                            row["workspace_id"],
+                            action_id=row["action_id"],
+                            claim_token=claim_token,
+                            kb_revision=row["kb_revision"],
+                        )
+                    except AppError as exc:
+                        if exc.code != "stale_context":
+                            raise
+                        connection.execute(
+                            """
+                            UPDATE jobs SET state = 'stale_context', finished_at = ?,
+                                safe_error_code = 'stale_context', failure_stage = 'dequeue'
+                            WHERE job_id = ? AND state = 'running' AND claim_token = ?
+                            """,
+                            (current.isoformat(), row["job_id"], claim_token),
+                        )
+                        self._event(
+                            connection,
+                            row["job_id"],
+                            JobState.STALE_CONTEXT,
+                            "stale_context",
+                            current,
+                        )
+                        updated = connection.execute(
+                            "SELECT * FROM jobs WHERE job_id = ?", (row["job_id"],)
+                        ).fetchone()
+                        rejected.append(self._job_from_row(updated))
+                        continue
                     claimed = connection.execute(
                         "SELECT * FROM jobs WHERE job_id = ?", (row["job_id"],)
                     ).fetchone()
                     self._event(connection, row["job_id"], JobState.RUNNING, None, current)
-                    return self._job_from_row(claimed)
+                    claimed_job = self._job_from_row(claimed)
+                    break
         finally:
             connection.close()
+        for job in rejected:
+            self._record_comparison_failure(job, job.safe_error_code or job.state.value)
+        return claimed_job
 
     def cancel(self, *, session_id: str, job_id: str, now: datetime | None = None) -> JobRecord:
         current = now or datetime.now(UTC)
@@ -398,9 +441,10 @@ class JobService:
         self.repository.invalidate_action_guard(job.workspace_id, job.action_id)
         self.repository.abort_staged_by_action(job.workspace_id, job.action_id)
         connection = connect_sqlite(self.control_db)
+        changed = 0
         try:
             with transaction(connection, immediate=True):
-                connection.execute(
+                changed = connection.execute(
                     """
                     UPDATE jobs SET state = ?, finished_at = ?, safe_error_code = ?,
                         failure_stage = ?
@@ -415,10 +459,37 @@ class JobService:
                         job.job_id,
                         job.claim_token,
                     ),
-                )
-                self._event(connection, job.job_id, state, safe_error_code, current)
+                ).rowcount
+                if changed == 1:
+                    self._event(connection, job.job_id, state, safe_error_code, current)
         finally:
             connection.close()
+        if changed == 1:
+            self._record_comparison_failure(job, safe_error_code)
+
+    def _record_comparison_failure(self, job: JobRecord, safe_error_code: str) -> None:
+        comparison_stage = job.payload.get("comparison_stage")
+        if comparison_stage is None:
+            return
+        self.repository.record_answer_snapshot_failure(
+            job.workspace_id,
+            action_id=job.action_id,
+            comparison={
+                "stage": str(comparison_stage),
+                "question": str(job.payload.get("question", "")),
+                "conversation_id": job.conversation_id,
+                "empty_history": job.payload.get("empty_history") is True,
+                "kb_revision": job.kb_revision,
+                "target_item_id": job.payload.get("target_item_id"),
+                "target_version": job.payload.get("target_version"),
+                "model_id": job.model_id,
+                "model_settings": job.model_settings,
+                "prompt_version": job.prompt_version,
+                "schema_version": job.schema_version,
+                "retrieval_version": "wg4-lexical-v2",
+            },
+            safe_error_code=safe_error_code,
+        )
 
     def _finish_cancelled(
         self, connection: sqlite3.Connection, job: JobRecord, current: datetime
@@ -494,6 +565,9 @@ class JobService:
             input_sha256=row["input_sha256"],
             kb_revision=row["kb_revision"],
             model_id=row["model_id"],
+            model_settings=json.loads(row["model_settings_json"]),
+            prompt_version=row["prompt_version"],
+            schema_version=row["schema_version"],
             state=JobState(row["state"]),
             created_at=datetime.fromisoformat(row["created_at"]),
             queue_deadline_at=datetime.fromisoformat(row["queue_deadline_at"]),

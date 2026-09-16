@@ -1,0 +1,1126 @@
+{
+  "fixture_schema": "wg4-seed-manifest-v5-proposal",
+  "fixture_version": "wg4-practical-seed-v5",
+  "purpose": "新規の練習領域へ初期収録する架空知識。既存DBを上書きするファイルではない。",
+  "synthetic": true,
+  "review_notice": "全件が講演用の架空文書・架空の質問回答であり、実設備の手順・診断・専門家による実証ではない。公開前に講演者が内容を確認する。",
+  "import_contract": {
+    "only_new_workspaces": true,
+    "assign_runtime_ids_on_server": true,
+    "preserve_old_workspaces": true,
+    "verify_quotes_and_scopes": true,
+    "seed_actor": "synthetic_fixture_author",
+    "source_question_is_not_fact_evidence": true,
+    "status_label": "初期収録（架空教材）",
+    "llm_calls_required": 0
+  },
+  "equipments": [
+    "冷却器1",
+    "ポンプ1",
+    "貯槽1"
+  ],
+  "sources": [
+    {
+      "key": "seed-source-01",
+      "title": "運転確認メモ1",
+      "kind": "document",
+      "equipment_label": "冷却器1",
+      "case_label": null,
+      "synthetic": true,
+      "segments": [
+        {
+          "key": "seed-source-01-s01",
+          "speaker": "document",
+          "text": "冷却器1の出口温度の表示が通常より高いときは、同じ時刻の出口温度、冷却水流量、冷却水入口温度、運転区分を確認記録に並べる。"
+        },
+        {
+          "key": "seed-source-01-s02",
+          "speaker": "document",
+          "text": "このメモは調査に用いる記録のそろえ方を示したものであり、異常の原因や操作変更の方法を定めたものではない。"
+        }
+      ]
+    },
+    {
+      "key": "seed-source-02",
+      "title": "不具合報告1",
+      "kind": "document",
+      "equipment_label": "冷却器1",
+      "case_label": "事例2",
+      "synthetic": true,
+      "segments": [
+        {
+          "key": "seed-source-02-s01",
+          "speaker": "document",
+          "text": "事例2では、冷却器1の出口温度の表示上昇と、冷却水流量の表示低下が同じ時間帯に記録された。"
+        },
+        {
+          "key": "seed-source-02-s02",
+          "speaker": "document",
+          "text": "担当者は冷却水流量計の表示と、その時間帯の運転記録を照合した。"
+        },
+        {
+          "key": "seed-source-02-s03",
+          "speaker": "document",
+          "text": "この報告には、原因の特定結果と対応後の結果は記載されていない。"
+        }
+      ]
+    },
+    {
+      "key": "seed-source-03",
+      "title": "運転ログ要約1",
+      "kind": "document",
+      "equipment_label": "冷却器1",
+      "case_label": "事例3",
+      "synthetic": true,
+      "segments": [
+        {
+          "key": "seed-source-03-s01",
+          "speaker": "document",
+          "text": "事例3では、冷却器1の出口温度の表示上昇と、冷却水入口温度の上昇が記録され、冷却水流量には通常範囲との記載があった。"
+        },
+        {
+          "key": "seed-source-03-s02",
+          "speaker": "document",
+          "text": "調査担当者は、入口温度と出口温度の時系列を同じ時刻軸に並べ、変化の始まりを確認した。"
+        },
+        {
+          "key": "seed-source-03-s03",
+          "speaker": "document",
+          "text": "入口温度の変化が出口温度の変化の原因であると、この要約だけで確定したわけではない。"
+        }
+      ]
+    },
+    {
+      "key": "seed-source-04",
+      "title": "引継ぎメモ1",
+      "kind": "document",
+      "equipment_label": "冷却器1",
+      "case_label": "事例4",
+      "synthetic": true,
+      "segments": [
+        {
+          "key": "seed-source-04-s01",
+          "speaker": "document",
+          "text": "事例4の引継ぎでは、冷却器1の起動直後に温度表示が変化したという記録があり、通常運転時の記録とは運転区分を分けて保存した。"
+        },
+        {
+          "key": "seed-source-04-s02",
+          "speaker": "document",
+          "text": "担当者は起動時刻、表示変化が記録された時刻、そのときの運転区分を確認した。"
+        },
+        {
+          "key": "seed-source-04-s03",
+          "speaker": "document",
+          "text": "本記録は起動直後の変化を安全または正常と判断した結果ではなく、原因も未特定である。"
+        }
+      ]
+    },
+    {
+      "key": "seed-source-05",
+      "title": "保全メモ1",
+      "kind": "document",
+      "equipment_label": "ポンプ1",
+      "case_label": "事例5",
+      "synthetic": true,
+      "segments": [
+        {
+          "key": "seed-source-05-s01",
+          "speaker": "document",
+          "text": "事例5では、ポンプ1の振動が以前の記録より大きいと記載されていた。"
+        },
+        {
+          "key": "seed-source-05-s02",
+          "speaker": "document",
+          "text": "保全担当者は測定位置、測定時刻、そのときの流量と回転数の記録を確認し、比較に使う過去記録の条件を並べた。"
+        },
+        {
+          "key": "seed-source-05-s03",
+          "speaker": "document",
+          "text": "このメモには部品損傷などの原因を確定した記載はない。"
+        }
+      ]
+    },
+    {
+      "key": "seed-source-06",
+      "title": "設計検討メモ1",
+      "kind": "document",
+      "equipment_label": "貯槽1",
+      "case_label": "設計検討例1",
+      "synthetic": true,
+      "segments": [
+        {
+          "key": "seed-source-06-s01",
+          "speaker": "document",
+          "text": "設計検討例1では、貯槽1の液位変動を比較するため、流入スケジュール、流出スケジュール、初期液位をそれぞれの検討ケースに記録した。"
+        },
+        {
+          "key": "seed-source-06-s02",
+          "speaker": "document",
+          "text": "担当者は液位の振幅だけで比較せず、入力スケジュールと初期条件の違いを並べて確認した。"
+        },
+        {
+          "key": "seed-source-06-s03",
+          "speaker": "document",
+          "text": "このメモは比較の前提を整理した記録であり、制御器の設定値や適切な運転範囲は記載していない。"
+        }
+      ]
+    },
+    {
+      "key": "seed-source-07",
+      "title": "経験Q&A1",
+      "kind": "interview",
+      "equipment_label": "冷却器1",
+      "case_label": null,
+      "synthetic": true,
+      "segments": [
+        {
+          "key": "seed-source-07-s01",
+          "speaker": "assistant",
+          "text": "出口温度の表示について相談されたとき、なぜ時刻をそろえた記録を確認するのですか。"
+        },
+        {
+          "key": "seed-source-07-s02",
+          "speaker": "operator",
+          "text": "別の時刻の値を並べると、同じ状況で起きた変化なのか分からなくなるためです。私はまず表示変化の時刻を確認し、その時間帯の流量と入口温度の記録を並べます。"
+        },
+        {
+          "key": "seed-source-07-s03",
+          "speaker": "operator",
+          "text": "一部の記録が欠けている場合は、その項目を不明として残します。値を推測して埋めることはしません。"
+        }
+      ]
+    },
+    {
+      "key": "seed-source-08",
+      "title": "経験Q&A2",
+      "kind": "interview",
+      "equipment_label": "冷却器1",
+      "case_label": null,
+      "synthetic": true,
+      "segments": [
+        {
+          "key": "seed-source-08-s01",
+          "speaker": "assistant",
+          "text": "冷却水の流量が低いと相談されたとき、何を追加で聞きますか。"
+        },
+        {
+          "key": "seed-source-08-s02",
+          "speaker": "operator",
+          "text": "冷却器1について、いつから低いのか、その時刻の出口温度と入口温度の記録はどうなっているかを尋ねます。変化が続いている時間帯を区別して記録を選びたいからです。"
+        },
+        {
+          "key": "seed-source-08-s03",
+          "speaker": "operator",
+          "text": "流量が低いという話を、通常範囲だった事例と同じ条件とは扱いません。ここでは原因は特定していません。"
+        }
+      ]
+    },
+    {
+      "key": "seed-source-09",
+      "title": "経験Q&A3",
+      "kind": "interview",
+      "equipment_label": "冷却器1",
+      "case_label": null,
+      "synthetic": true,
+      "segments": [
+        {
+          "key": "seed-source-09-s01",
+          "speaker": "assistant",
+          "text": "冷却器1の温度表示が高いとき、過去の清掃履歴をどう使いますか。"
+        },
+        {
+          "key": "seed-source-09-s02",
+          "speaker": "operator",
+          "text": "私は清掃した日と、その前後で記録されている運転条件や温度表示を確認する材料にします。清掃したという記録だけでは、そのときの不具合の原因が何だったか分からないからです。"
+        },
+        {
+          "key": "seed-source-09-s03",
+          "speaker": "operator",
+          "text": "清掃履歴だけを根拠に、今回も汚れが原因だと判断したり、今回の対応を決めたりはしません。"
+        }
+      ]
+    },
+    {
+      "key": "seed-source-10",
+      "title": "経験Q&A4",
+      "kind": "interview",
+      "equipment_label": "冷却器1",
+      "case_label": null,
+      "synthetic": true,
+      "segments": [
+        {
+          "key": "seed-source-10-s01",
+          "speaker": "assistant",
+          "text": "温度表示の相談で、起動直後か通常運転中かを聞くのはなぜですか。"
+        },
+        {
+          "key": "seed-source-10-s02",
+          "speaker": "operator",
+          "text": "私は、違う運転区分の記録を同じ前提で比べないために聞きます。起動直後という相談なら、起動時刻とその時間帯の記録がある事例をまず探します。"
+        },
+        {
+          "key": "seed-source-10-s03",
+          "speaker": "operator",
+          "text": "起動直後だったということだけで、その表示変化が問題ないと判断するわけではありません。"
+        }
+      ]
+    },
+    {
+      "key": "seed-source-11",
+      "title": "経験Q&A5",
+      "kind": "interview",
+      "equipment_label": "ポンプ1",
+      "case_label": null,
+      "synthetic": true,
+      "segments": [
+        {
+          "key": "seed-source-11-s01",
+          "speaker": "assistant",
+          "text": "ポンプ1の振動記録を比べるとき、追加で何を確認しますか。"
+        },
+        {
+          "key": "seed-source-11-s02",
+          "speaker": "operator",
+          "text": "私は測定位置、流量、回転数が比較したい記録と同じかを確認します。条件が違えば、振動が大きいという言葉だけで同じ事例だとは扱えないと考えるためです。"
+        },
+        {
+          "key": "seed-source-11-s03",
+          "speaker": "operator",
+          "text": "これらの条件が分からなければ、条件未確認として記録を示します。この発言から故障部位は特定できません。"
+        }
+      ]
+    },
+    {
+      "key": "seed-source-12",
+      "title": "経験Q&A6",
+      "kind": "interview",
+      "equipment_label": "貯槽1",
+      "case_label": null,
+      "synthetic": true,
+      "segments": [
+        {
+          "key": "seed-source-12-s01",
+          "speaker": "assistant",
+          "text": "貯槽1の液位変動に関する設計検討を引き継ぐとき、何を残しますか。"
+        },
+        {
+          "key": "seed-source-12-s02",
+          "speaker": "operator",
+          "text": "私は流入と流出のスケジュール、初期液位、比較したい運転目的を記録に残します。振幅が小さいという結果だけでは、違う条件でも同じ比較ができるか分からないためです。"
+        },
+        {
+          "key": "seed-source-12-s03",
+          "speaker": "operator",
+          "text": "前提条件が異なる新しい検討には、その違いを確認せずに過去の結論だけを適用しません。"
+        }
+      ]
+    }
+  ],
+  "knowledge_items": [
+    {
+      "key": "seed-k01",
+      "display_number": 1,
+      "title": "出口温度表示が高いときにそろえる記録",
+      "equipment_label": "冷却器1",
+      "case_label": null,
+      "source_kind": "document",
+      "source_keys": [
+        "seed-source-01"
+      ],
+      "tags": [
+        "出口温度",
+        "温度表示",
+        "冷却水",
+        "記録確認"
+      ],
+      "cause_status": "unresolved",
+      "facts": [
+        {
+          "key": "seed-k01-f01",
+          "kind": "check_action",
+          "text": "同じ時刻の出口温度・冷却水流量・入口温度・運転区分の記録を並べる",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-01-s01",
+              "quote": "冷却器1の出口温度の表示が通常より高いときは、同じ時刻の出口温度、冷却水流量、冷却水入口温度、運転区分を確認記録に並べる。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k01-f02",
+          "kind": "condition",
+          "text": "出口温度の表示が通常より高い",
+          "condition_scope": "applicability",
+          "evidence": [
+            {
+              "segment_key": "seed-source-01-s01",
+              "quote": "冷却器1の出口温度の表示が通常より高いときは、同じ時刻の出口温度、冷却水流量、冷却水入口温度、運転区分を確認記録に並べる。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k01-f03",
+          "kind": "cause_status",
+          "text": "このメモでは原因を確定しない",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-01-s02",
+              "quote": "このメモは調査に用いる記録のそろえ方を示したものであり、異常の原因や操作変更の方法を定めたものではない。"
+            }
+          ]
+        }
+      ],
+      "missing_fields": [
+        "表示変化の開始時刻",
+        "原因",
+        "確認後の結果"
+      ],
+      "registration_origin": "synthetic_fixture",
+      "display_origin_label": "初期収録・架空の教材データ"
+    },
+    {
+      "key": "seed-k02",
+      "display_number": 2,
+      "title": "冷却水流量の表示低下を伴った事例",
+      "equipment_label": "冷却器1",
+      "case_label": "事例2",
+      "source_kind": "document",
+      "source_keys": [
+        "seed-source-02"
+      ],
+      "tags": [
+        "出口温度",
+        "流量低下",
+        "CW流量",
+        "過去事例"
+      ],
+      "cause_status": "unresolved",
+      "facts": [
+        {
+          "key": "seed-k02-f01",
+          "kind": "observation",
+          "text": "出口温度の表示上昇と冷却水流量の表示低下が同じ時間帯に記録された",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-02-s01",
+              "quote": "事例2では、冷却器1の出口温度の表示上昇と、冷却水流量の表示低下が同じ時間帯に記録された。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k02-f02",
+          "kind": "condition",
+          "text": "冷却水流量の表示が低下していた",
+          "condition_scope": "case_context",
+          "evidence": [
+            {
+              "segment_key": "seed-source-02-s01",
+              "quote": "事例2では、冷却器1の出口温度の表示上昇と、冷却水流量の表示低下が同じ時間帯に記録された。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k02-f03",
+          "kind": "check_action",
+          "text": "冷却水流量計の表示と同時間帯の運転記録を照合した",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-02-s02",
+              "quote": "担当者は冷却水流量計の表示と、その時間帯の運転記録を照合した。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k02-f04",
+          "kind": "cause_status",
+          "text": "原因の特定結果は記載されていない",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-02-s03",
+              "quote": "この報告には、原因の特定結果と対応後の結果は記載されていない。"
+            }
+          ]
+        }
+      ],
+      "missing_fields": [
+        "原因",
+        "対応後の結果"
+      ],
+      "registration_origin": "synthetic_fixture",
+      "display_origin_label": "初期収録・架空の教材データ"
+    },
+    {
+      "key": "seed-k03",
+      "display_number": 3,
+      "title": "冷却水入口温度も変化していた事例",
+      "equipment_label": "冷却器1",
+      "case_label": "事例3",
+      "source_kind": "document",
+      "source_keys": [
+        "seed-source-03"
+      ],
+      "tags": [
+        "入口温度",
+        "出口温度",
+        "時系列",
+        "温度上昇"
+      ],
+      "cause_status": "unresolved",
+      "facts": [
+        {
+          "key": "seed-k03-f01",
+          "kind": "condition",
+          "text": "冷却水入口温度が上昇し、流量は通常範囲と記載されていた",
+          "condition_scope": "case_context",
+          "evidence": [
+            {
+              "segment_key": "seed-source-03-s01",
+              "quote": "事例3では、冷却器1の出口温度の表示上昇と、冷却水入口温度の上昇が記録され、冷却水流量には通常範囲との記載があった。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k03-f02",
+          "kind": "observation",
+          "text": "出口温度の表示上昇と入口温度上昇が記録された",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-03-s01",
+              "quote": "事例3では、冷却器1の出口温度の表示上昇と、冷却水入口温度の上昇が記録され、冷却水流量には通常範囲との記載があった。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k03-f03",
+          "kind": "check_action",
+          "text": "入口温度と出口温度の時系列を同じ時刻軸に並べた",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-03-s02",
+              "quote": "調査担当者は、入口温度と出口温度の時系列を同じ時刻軸に並べ、変化の始まりを確認した。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k03-f04",
+          "kind": "cause_status",
+          "text": "原因関係はこの要約では確定していない",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-03-s03",
+              "quote": "入口温度の変化が出口温度の変化の原因であると、この要約だけで確定したわけではない。"
+            }
+          ]
+        }
+      ],
+      "missing_fields": [
+        "因果関係",
+        "他の運転条件"
+      ],
+      "registration_origin": "synthetic_fixture",
+      "display_origin_label": "初期収録・架空の教材データ"
+    },
+    {
+      "key": "seed-k04",
+      "display_number": 4,
+      "title": "起動直後の表示変化を区別した引継ぎ",
+      "equipment_label": "冷却器1",
+      "case_label": "事例4",
+      "source_kind": "document",
+      "source_keys": [
+        "seed-source-04"
+      ],
+      "tags": [
+        "起動",
+        "定常",
+        "引継ぎ",
+        "運転区分"
+      ],
+      "cause_status": "unresolved",
+      "facts": [
+        {
+          "key": "seed-k04-f01",
+          "kind": "condition",
+          "text": "起動直後の記録である",
+          "condition_scope": "case_context",
+          "evidence": [
+            {
+              "segment_key": "seed-source-04-s01",
+              "quote": "事例4の引継ぎでは、冷却器1の起動直後に温度表示が変化したという記録があり、通常運転時の記録とは運転区分を分けて保存した。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k04-f02",
+          "kind": "check_action",
+          "text": "起動時刻・表示変化の時刻・運転区分を確認した",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-04-s02",
+              "quote": "担当者は起動時刻、表示変化が記録された時刻、そのときの運転区分を確認した。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k04-f03",
+          "kind": "exception",
+          "text": "起動直後の記録を通常運転時の記録と混同しない",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-04-s01",
+              "quote": "事例4の引継ぎでは、冷却器1の起動直後に温度表示が変化したという記録があり、通常運転時の記録とは運転区分を分けて保存した。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k04-f04",
+          "kind": "cause_status",
+          "text": "正常性の判定および原因の特定は行われていない",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-04-s03",
+              "quote": "本記録は起動直後の変化を安全または正常と判断した結果ではなく、原因も未特定である。"
+            }
+          ]
+        }
+      ],
+      "missing_fields": [
+        "原因",
+        "正常性の判定"
+      ],
+      "registration_origin": "synthetic_fixture",
+      "display_origin_label": "初期収録・架空の教材データ"
+    },
+    {
+      "key": "seed-k05",
+      "display_number": 5,
+      "title": "ポンプの振動記録と運転条件の照合",
+      "equipment_label": "ポンプ1",
+      "case_label": "事例5",
+      "source_kind": "document",
+      "source_keys": [
+        "seed-source-05"
+      ],
+      "tags": [
+        "振動",
+        "ポンプ",
+        "回転数",
+        "測定位置"
+      ],
+      "cause_status": "unresolved",
+      "facts": [
+        {
+          "key": "seed-k05-f01",
+          "kind": "observation",
+          "text": "振動が以前の記録より大きいとの記載があった",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-05-s01",
+              "quote": "事例5では、ポンプ1の振動が以前の記録より大きいと記載されていた。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k05-f02",
+          "kind": "check_action",
+          "text": "測定位置・時刻・流量・回転数と過去記録の条件を並べた",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-05-s02",
+              "quote": "保全担当者は測定位置、測定時刻、そのときの流量と回転数の記録を確認し、比較に使う過去記録の条件を並べた。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k05-f03",
+          "kind": "cause_status",
+          "text": "部品損傷等の原因は確定していない",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-05-s03",
+              "quote": "このメモには部品損傷などの原因を確定した記載はない。"
+            }
+          ]
+        }
+      ],
+      "missing_fields": [
+        "原因",
+        "測定条件が一致したか"
+      ],
+      "registration_origin": "synthetic_fixture",
+      "display_origin_label": "初期収録・架空の教材データ"
+    },
+    {
+      "key": "seed-k06",
+      "display_number": 6,
+      "title": "槽の液位変動を比較した設計検討",
+      "equipment_label": "貯槽1",
+      "case_label": "設計検討例1",
+      "source_kind": "document",
+      "source_keys": [
+        "seed-source-06"
+      ],
+      "tags": [
+        "液位",
+        "設計",
+        "初期条件",
+        "流入スケジュール"
+      ],
+      "cause_status": "unresolved",
+      "facts": [
+        {
+          "key": "seed-k06-f01",
+          "kind": "check_action",
+          "text": "液位変動の比較時に入力スケジュールと初期液位の違いを確認した",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-06-s02",
+              "quote": "担当者は液位の振幅だけで比較せず、入力スケジュールと初期条件の違いを並べて確認した。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k06-f02",
+          "kind": "condition",
+          "text": "貯槽1についての設計検討ケースを比較する",
+          "condition_scope": "applicability",
+          "evidence": [
+            {
+              "segment_key": "seed-source-06-s01",
+              "quote": "設計検討例1では、貯槽1の液位変動を比較するため、流入スケジュール、流出スケジュール、初期液位をそれぞれの検討ケースに記録した。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k06-f03",
+          "kind": "exception",
+          "text": "この記録から制御器設定値や適切な運転範囲は決められない",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-06-s03",
+              "quote": "このメモは比較の前提を整理した記録であり、制御器の設定値や適切な運転範囲は記載していない。"
+            }
+          ]
+        }
+      ],
+      "missing_fields": [
+        "設定値",
+        "適切な運転範囲"
+      ],
+      "registration_origin": "synthetic_fixture",
+      "display_origin_label": "初期収録・架空の教材データ"
+    },
+    {
+      "key": "seed-k07",
+      "display_number": 7,
+      "title": "表示変化の確認で時刻をそろえる理由",
+      "equipment_label": "冷却器1",
+      "case_label": null,
+      "source_kind": "interview",
+      "source_keys": [
+        "seed-source-07"
+      ],
+      "tags": [
+        "出口温度",
+        "時刻",
+        "判断理由",
+        "記録不足"
+      ],
+      "cause_status": "unresolved",
+      "facts": [
+        {
+          "key": "seed-k07-f01",
+          "kind": "check_action",
+          "text": "表示変化の時刻と同時間帯の流量・入口温度の記録を確認する",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-07-s02",
+              "quote": "別の時刻の値を並べると、同じ状況で起きた変化なのか分からなくなるためです。私はまず表示変化の時刻を確認し、その時間帯の流量と入口温度の記録を並べます。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k07-f02",
+          "kind": "decision_reason",
+          "text": "別時刻の値では同じ状況の変化か分からなくなるという発言",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-07-s02",
+              "quote": "別の時刻の値を並べると、同じ状況で起きた変化なのか分からなくなるためです。私はまず表示変化の時刻を確認し、その時間帯の流量と入口温度の記録を並べます。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k07-f03",
+          "kind": "exception",
+          "text": "欠けた記録は不明として残すという発言",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-07-s03",
+              "quote": "一部の記録が欠けている場合は、その項目を不明として残します。値を推測して埋めることはしません。"
+            }
+          ]
+        }
+      ],
+      "missing_fields": [
+        "個別事例の原因",
+        "欠測項目の値"
+      ],
+      "registration_origin": "synthetic_fixture",
+      "display_origin_label": "初期収録・架空の教材データ"
+    },
+    {
+      "key": "seed-k08",
+      "display_number": 8,
+      "title": "流量が低い相談で不足条件を尋ねる理由",
+      "equipment_label": "冷却器1",
+      "case_label": null,
+      "source_kind": "interview",
+      "source_keys": [
+        "seed-source-08"
+      ],
+      "tags": [
+        "流量低下",
+        "冷却水",
+        "追加質問",
+        "確認順序"
+      ],
+      "cause_status": "unresolved",
+      "facts": [
+        {
+          "key": "seed-k08-f01",
+          "kind": "check_action",
+          "text": "流量低下の開始時刻と同時刻の出口温度・入口温度の記録を尋ねる",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-08-s02",
+              "quote": "冷却器1について、いつから低いのか、その時刻の出口温度と入口温度の記録はどうなっているかを尋ねます。変化が続いている時間帯を区別して記録を選びたいからです。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k08-f02",
+          "kind": "decision_reason",
+          "text": "変化が続く時間帯を区別して記録を選びたいという発言",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-08-s02",
+              "quote": "冷却器1について、いつから低いのか、その時刻の出口温度と入口温度の記録はどうなっているかを尋ねます。変化が続いている時間帯を区別して記録を選びたいからです。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k08-f03",
+          "kind": "condition",
+          "text": "冷却器1で流量が低いと相談された場面",
+          "condition_scope": "applicability",
+          "evidence": [
+            {
+              "segment_key": "seed-source-08-s02",
+              "quote": "冷却器1について、いつから低いのか、その時刻の出口温度と入口温度の記録はどうなっているかを尋ねます。変化が続いている時間帯を区別して記録を選びたいからです。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k08-f04",
+          "kind": "exception",
+          "text": "流量低下を通常範囲の事例と同じ条件として扱わない",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-08-s03",
+              "quote": "流量が低いという話を、通常範囲だった事例と同じ条件とは扱いません。ここでは原因は特定していません。"
+            }
+          ]
+        }
+      ],
+      "missing_fields": [
+        "原因",
+        "変化の継続時間"
+      ],
+      "registration_origin": "synthetic_fixture",
+      "display_origin_label": "初期収録・架空の教材データ"
+    },
+    {
+      "key": "seed-k09",
+      "display_number": 9,
+      "title": "清掃履歴だけで原因を決めない理由",
+      "equipment_label": "冷却器1",
+      "case_label": null,
+      "source_kind": "interview",
+      "source_keys": [
+        "seed-source-09"
+      ],
+      "tags": [
+        "清掃",
+        "保全履歴",
+        "温度表示",
+        "原因未確定"
+      ],
+      "cause_status": "unresolved",
+      "facts": [
+        {
+          "key": "seed-k09-f01",
+          "kind": "check_action",
+          "text": "清掃日と前後の運転条件・温度表示の記録を確認する",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-09-s02",
+              "quote": "私は清掃した日と、その前後で記録されている運転条件や温度表示を確認する材料にします。清掃したという記録だけでは、そのときの不具合の原因が何だったか分からないからです。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k09-f02",
+          "kind": "decision_reason",
+          "text": "清掃の実施記録だけでは原因が分からないという発言",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-09-s02",
+              "quote": "私は清掃した日と、その前後で記録されている運転条件や温度表示を確認する材料にします。清掃したという記録だけでは、そのときの不具合の原因が何だったか分からないからです。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k09-f03",
+          "kind": "exception",
+          "text": "清掃履歴だけから今回の原因や対応を確定しない",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-09-s03",
+              "quote": "清掃履歴だけを根拠に、今回も汚れが原因だと判断したり、今回の対応を決めたりはしません。"
+            }
+          ]
+        }
+      ],
+      "missing_fields": [
+        "清掃前後の詳細条件",
+        "今回の原因"
+      ],
+      "registration_origin": "synthetic_fixture",
+      "display_origin_label": "初期収録・架空の教材データ"
+    },
+    {
+      "key": "seed-k10",
+      "display_number": 10,
+      "title": "起動直後の記録を別に探す理由",
+      "equipment_label": "冷却器1",
+      "case_label": null,
+      "source_kind": "interview",
+      "source_keys": [
+        "seed-source-10"
+      ],
+      "tags": [
+        "起動直後",
+        "定常",
+        "引継ぎ",
+        "判断理由"
+      ],
+      "cause_status": "unresolved",
+      "facts": [
+        {
+          "key": "seed-k10-f01",
+          "kind": "check_action",
+          "text": "起動直後なら起動時刻と同時間帯の記録がある事例を探す",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-10-s02",
+              "quote": "私は、違う運転区分の記録を同じ前提で比べないために聞きます。起動直後という相談なら、起動時刻とその時間帯の記録がある事例をまず探します。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k10-f02",
+          "kind": "decision_reason",
+          "text": "運転区分の異なる記録を同じ前提で比べないためという発言",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-10-s02",
+              "quote": "私は、違う運転区分の記録を同じ前提で比べないために聞きます。起動直後という相談なら、起動時刻とその時間帯の記録がある事例をまず探します。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k10-f03",
+          "kind": "condition",
+          "text": "起動直後の表示変化についての相談",
+          "condition_scope": "applicability",
+          "evidence": [
+            {
+              "segment_key": "seed-source-10-s02",
+              "quote": "私は、違う運転区分の記録を同じ前提で比べないために聞きます。起動直後という相談なら、起動時刻とその時間帯の記録がある事例をまず探します。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k10-f04",
+          "kind": "exception",
+          "text": "起動直後という情報だけで問題なしとは判断しない",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-10-s03",
+              "quote": "起動直後だったということだけで、その表示変化が問題ないと判断するわけではありません。"
+            }
+          ]
+        }
+      ],
+      "missing_fields": [
+        "異常の原因",
+        "正常性の判定"
+      ],
+      "registration_origin": "synthetic_fixture",
+      "display_origin_label": "初期収録・架空の教材データ"
+    },
+    {
+      "key": "seed-k11",
+      "display_number": 11,
+      "title": "振動の大小だけで過去事例を選ばない理由",
+      "equipment_label": "ポンプ1",
+      "case_label": null,
+      "source_kind": "interview",
+      "source_keys": [
+        "seed-source-11"
+      ],
+      "tags": [
+        "ポンプ",
+        "振動",
+        "適用条件",
+        "回転数"
+      ],
+      "cause_status": "unresolved",
+      "facts": [
+        {
+          "key": "seed-k11-f01",
+          "kind": "check_action",
+          "text": "比較する記録の測定位置・流量・回転数を確認する",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-11-s02",
+              "quote": "私は測定位置、流量、回転数が比較したい記録と同じかを確認します。条件が違えば、振動が大きいという言葉だけで同じ事例だとは扱えないと考えるためです。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k11-f02",
+          "kind": "decision_reason",
+          "text": "振動が大きいという言葉だけでは同じ条件の事例と扱えないという発言",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-11-s02",
+              "quote": "私は測定位置、流量、回転数が比較したい記録と同じかを確認します。条件が違えば、振動が大きいという言葉だけで同じ事例だとは扱えないと考えるためです。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k11-f03",
+          "kind": "exception",
+          "text": "条件不明なら未確認として示し、故障部位を特定しない",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-11-s03",
+              "quote": "これらの条件が分からなければ、条件未確認として記録を示します。この発言から故障部位は特定できません。"
+            }
+          ]
+        }
+      ],
+      "missing_fields": [
+        "故障部位",
+        "今回の測定条件"
+      ],
+      "registration_origin": "synthetic_fixture",
+      "display_origin_label": "初期収録・架空の教材データ"
+    },
+    {
+      "key": "seed-k12",
+      "display_number": 12,
+      "title": "液位変動の設計比較で前提を残す理由",
+      "equipment_label": "貯槽1",
+      "case_label": null,
+      "source_kind": "interview",
+      "source_keys": [
+        "seed-source-12"
+      ],
+      "tags": [
+        "液位",
+        "設計",
+        "技術継承",
+        "前提条件"
+      ],
+      "cause_status": "unresolved",
+      "facts": [
+        {
+          "key": "seed-k12-f01",
+          "kind": "check_action",
+          "text": "流入・流出スケジュール、初期液位、運転目的を記録に残す",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-12-s02",
+              "quote": "私は流入と流出のスケジュール、初期液位、比較したい運転目的を記録に残します。振幅が小さいという結果だけでは、違う条件でも同じ比較ができるか分からないためです。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k12-f02",
+          "kind": "decision_reason",
+          "text": "振幅の大小だけでは異なる条件での比較可能性が分からないという発言",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-12-s02",
+              "quote": "私は流入と流出のスケジュール、初期液位、比較したい運転目的を記録に残します。振幅が小さいという結果だけでは、違う条件でも同じ比較ができるか分からないためです。"
+            }
+          ]
+        },
+        {
+          "key": "seed-k12-f03",
+          "kind": "exception",
+          "text": "前提が異なる検討に過去の結論だけを適用しない",
+          "condition_scope": null,
+          "evidence": [
+            {
+              "segment_key": "seed-source-12-s03",
+              "quote": "前提条件が異なる新しい検討には、その違いを確認せずに過去の結論だけを適用しません。"
+            }
+          ]
+        }
+      ],
+      "missing_fields": [
+        "新しい検討の条件",
+        "制御器の設定値"
+      ],
+      "registration_origin": "synthetic_fixture",
+      "display_origin_label": "初期収録・架空の教材データ"
+    }
+  ]
+}

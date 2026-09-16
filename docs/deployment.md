@@ -36,7 +36,7 @@ git ls-files
 - 参加者はStreamlitアカウントやOpenAIキーなしで共通パスワードだけを使える
 - 2つの独立ブラウザでworkspace・会話・proposal・exportが混ざらない
 - 1→5→10→30 browser contextsで段階試験し、最大同時3、FIFO、取消、timeout、DB lockを記録
-- 主シナリオLIVE-01〜03、07〜08を3回以上確認
+- v5主シナリオ（初期検索、文書版A、本人役補足版B、校正条件版C）を3回以上確認
 - 実在するURLとdeploy commitだけを記録
 
 Cloud再起動後は、OpenAI側の利用量と支出上限を確認するまで有限枠を再有効化しない。

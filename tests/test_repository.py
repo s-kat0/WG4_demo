@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -41,7 +42,22 @@ def test_seed_is_transformed_to_approved_versions(
     assert [item.display_name for item in items] == ["知識項目1", "知識項目2", "知識項目3"]
     assert all(item.version == 1 for item in items)
     assert all(item.cause_status is CauseStatus.UNRESOLVED for item in items)
+    assert [item.source_kind for item in items] == ["document", "document", "interview"]
     assert repository.allowed_evidence_ids(workspace_id)
+
+    connection = sqlite3.connect(repository.path)
+    try:
+        connection.execute(
+            "UPDATE knowledge_items SET source_kind = 'document', title = '' WHERE workspace_id = ? AND display_number = 3",
+            (workspace_id,),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    reloaded = Repository(repository.path)
+    corrected = reloaded.list_knowledge(workspace_id)[2]
+    assert corrected.source_kind == "interview"
+    assert corrected.title == "知識項目3"
 
 
 def test_workspace_ids_are_enforced(
@@ -109,10 +125,38 @@ def test_unapproved_source_stays_out_until_atomic_approval(
         cause_status=item3.cause_status,
         allowed_segment_ids={segment_id},
     )
+    same_proposal = repository.stage_proposal(
+        workspace_id,
+        action_id="action-update-1",
+        target_item_id=item3.id,
+        base_version=1,
+        operations=[operation],
+        reason="照合に必要な確認事項を補う",
+        equipment="冷却器1",
+        case_label="事例1",
+        missing_fields=item3.missing_fields,
+        cause_status=item3.cause_status,
+        allowed_segment_ids={segment_id},
+    )
+    stale_proposal = repository.stage_proposal(
+        workspace_id,
+        action_id="action-update-2",
+        target_item_id=item3.id,
+        base_version=1,
+        operations=[operation],
+        reason="同じ旧版を対象にする競合案",
+        equipment="冷却器1",
+        case_label="事例1",
+        missing_fields=item3.missing_fields,
+        cause_status=item3.cause_status,
+        allowed_segment_ids={segment_id},
+    )
 
     assert proposal.status == "staged"
+    assert same_proposal.id == proposal.id
     assert segment_id not in repository.allowed_evidence_ids(workspace_id)
     proposal = repository.publish_proposal(workspace_id, proposal.id)
+    stale_proposal = repository.publish_proposal(workspace_id, stale_proposal.id)
     assert proposal.status == "pending"
     assert segment_id not in repository.allowed_evidence_ids(workspace_id)
 
@@ -140,11 +184,44 @@ def test_unapproved_source_stays_out_until_atomic_approval(
     assert duplicate.already_applied is True
     assert repository.get_knowledge(workspace_id, item3.id).version == 2
 
+    with pytest.raises(ValidationFailure, match="proposal_stale"):
+        repository.approve_proposal(
+            workspace_id,
+            stale_proposal.id,
+            actor_session_id=participant.id,
+            expected_content_hash=stale_proposal.content_hash,
+        )
+    assert repository.get_proposal(workspace_id, stale_proposal.id).status == "stale"
+
     old_conversation = repository.create_conversation(workspace_id)
     repository.append_message(workspace_id, old_conversation, role="user", text="old question")
     new_conversation = repository.create_conversation(workspace_id)
     assert repository.list_messages(workspace_id, new_conversation) == []
     assert repository.get_knowledge(workspace_id, item3.id).version == 2
+
+
+def test_from_scratch_workspace_and_reset_are_really_empty(
+    repository: Repository, participant: SessionRecord, project_root: Path
+) -> None:
+    workspace = repository.create_workspace(participant.id, seed_mode="from_scratch")
+    assert repository.list_knowledge(workspace.id) == []
+
+    with pytest.raises(ValidationFailure, match="seed_unexpected"):
+        repository.reset_workspace(
+            participant.id,
+            workspace.id,
+            seed_mode="from_scratch",
+            seed_path=project_root / "data" / "approved_seed.json",
+        )
+
+    reset, _ = repository.reset_workspace(
+        participant.id,
+        workspace.id,
+        seed_mode="from_scratch",
+        seed_path=None,
+    )
+    assert reset.kb_revision == 1
+    assert repository.list_knowledge(workspace.id) == []
 
 
 def test_quote_mismatch_is_not_repaired(

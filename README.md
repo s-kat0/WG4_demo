@@ -1,20 +1,19 @@
 # 現場知識をつなぐミニエージェント
 
-2026年9月17日のWG4講演「AIエージェントによる暗黙知と形式知の構造化・活用の第一歩」用Streamlitデモ。架空の冷却器記録を、原文根拠・適用条件・版とともに整理し、人の承認後だけ正式知識へ反映する。
+2026年9月17日のWG4講演「AIエージェントによる暗黙知と形式知の構造化・活用の第一歩」用Streamlitデモ。架空の設備記録とQ&Aを、原文、条件、判断理由、版とともに検索し、人が承認した補足だけを以後の相談に利用する。
 
-このアプリは実設備の診断・操作指示には使用できない。入力はOpenAI APIへ送信されるため、機密情報・個人情報・実際の現場記録を入力しないこと。
+このアプリは実設備の診断・操作指示には使用できない。入力はOpenAI APIへ送信されるため、機密情報、個人情報、実際の現場記録を入力しないこと。詳細仕様のsingle source of truthは [SPEC.md](SPEC.md)、実装入口は [CODING_AGENT_HANDOFF.md](CODING_AGENT_HANDOFF.md)。
 
-別のコーディングエージェントへ引き継ぐ場合は、最初に [CODING_AGENT_HANDOFF.md](CODING_AGENT_HANDOFF.md) を読み、詳細判断では [SPEC.md](SPEC.md) をsingle source of truthとして参照すること。
+## v5の主な機能
 
-## 実装範囲
-
-- 文書抽出、追加質問、回答反映、更新案作成のStructured Outputs
-- OpenAI Agents SDKによる `search_knowledge`、`get_context`、`read_evidence`、`propose_update`
-- workspaceごとに分離したSQLiteの原文・知識版・Proposal・Approval
-- 現行承認版だけを対象にする決定的検索とNetworkXグラフ探索
-- 参加者／管理者のArgon2id認証、有限利用台帳、RPM/TPM／call上限
-- SQLite FIFO待機列、全体3ジョブ、待機30件、1セッション1件、取消・期限・重複防止
-- API／検索／検証／保存失敗を成功結果へ置き換えないエラー契約
+- 新規の実務デモworkspaceへ、検証済みの初期知識12件（文書6、Q&A6）をLLMなしで登録
+- 承認済み知識だけを対象とする非課金検索、設備・由来フィルター、原文・版の表示
+- Agents SDKによる検索、NetworkXグラフ探索、原文取得と根拠付き複数ターン相談
+- 現状、仮定の別条件、訂正、設備切替、直前候補を分けた会話状態
+- 文書だけの版A、本人役の理由・適用範囲を補った版B、校正条件を補った版Cの実回答記録
+- workspaceごとに分離したSQLiteの原文、知識版、Proposal、Approval、会話、比較snapshot
+- 参加者／管理者のArgon2id認証、有限利用台帳、共有FIFOキュー、同時実行3、待機30、1セッション1件
+- API、検索、検証、保存の失敗を固定回答、別モデル、前回回答、正常0件へ置換しないエラー契約
 
 ## ローカル起動
 
@@ -24,73 +23,89 @@ Python 3.12とuvが必要。
 uv sync --locked
 cp .env.example .env
 uv run --locked python scripts/create_password_hash.py
-# .envへ専用APIキー、検証済みモデル、別々の2ハッシュ、期限、確認済みTPMを設定
+# .envへ専用APIキー、モデル、異なる2つのハッシュ、期限、確認済みTPMを設定
 uv run --locked --env-file .env python scripts/preflight.py
 uv run --locked --env-file .env streamlit run app.py
 ```
 
-`.env`はGit管理外。アプリは`.env`を自動探索しないため、ローカルでは必ずuvの`--env-file`で明示的に渡す。APIキーや平文パスワードをCLI引数へ置かない。
+アプリは`.env`を自動探索しない。ローカルではuvの`--env-file`で明示的に渡す。実`.env`、APIキー、平文パスワード、runtime DBはGit管理しない。
+
+### `.env`の設定
+
+`.env.example`をコピーし、少なくとも次を設定する。
+
+- `OPENAI_API_KEY`: サーバー側だけで読む専用project key
+- `OPENAI_MODEL`: 検証済みの正確なモデルID。別モデルへ自動切替しない
+- `OPENAI_REASONING_EFFORT`: `low`を推奨初期値とするが、v5ではlive再測定が必要
+- `DEMO_PASSWORD_HASH` / `ADMIN_PASSWORD_HASH`: 別々のArgon2idハッシュ
+- `DEMO_EXPIRES_AT`: timezone付きISO 8601
+- `APP_LLM_ENABLED`: 実送信を許すときだけ`true`
+- `GLOBAL_RPM` / `GLOBAL_TPM`: OpenAI projectで確認した上限以下
+- `APP_MAX_LLM_CALLS` / `SESSION_MAX_LLM_CALLS`: 全体・sessionの有限call上限
 
 ### パスワードハッシュ
 
-`scripts/create_password_hash.py`は`getpass`で同じ値を2回読み、Argon2idハッシュだけを出力する。参加者用と管理者用は異なる十分長いランダム値にする。ハッシュを含む実`.env`やCloud Secretsもリポジトリへ置かない。
+```bash
+uv run --locked python scripts/create_password_hash.py
+```
+
+スクリプトは`getpass`で同じ値を2回読み、Argon2idハッシュだけを表示する。参加者用と管理者用は異なる十分長い値にする。平文や生成メモをリポジトリへ置かない。
 
 ## 実LLMの有効化と利用上限
 
 実API送信には次の全条件が必要。
 
 1. `APP_LLM_ENABLED=true`
-2. `OPENAI_API_KEY`、正確な`OPENAI_MODEL`、`OPENAI_REASONING_EFFORT`、timezone付き`DEMO_EXPIRES_AT`、確認済み`GLOBAL_TPM`が設定済み
-3. 管理者が専用OpenAIプロジェクトの強制停止型支出上限を確認
-4. 管理画面で有限call枠を追加し、利用台帳を明示的に有効化
+2. APIキー、モデル、reasoning、期限、確認済みTPMが設定済み
+3. 管理者が専用OpenAI projectの外部支出上限を確認済み
+4. 管理画面で有限call枠を明示的に追加済み
 
-2026-09-16の実API検証では`OPENAI_MODEL=gpt-5.6-luna`、`OPENAI_REASONING_EFFORT=low`を採用した。主シナリオは47.6秒、20モデル呼出しで完走した。約30人の講演用の推奨初期値は`GLOBAL_RPM=60`、`GLOBAL_TPM=200000`、`MAX_CONCURRENT_LLM=3`。いずれもLunaの公開Tier 1上限（500 RPM、500,000 TPM）より低いが、実際のOpenAIプロジェクトDashboardに表示される上限を当日確認し、それ以下に設定すること。
+推奨するアプリ側初期値は`GLOBAL_RPM=60`、`GLOBAL_TPM=200000`、`MAX_CONCURRENT_LLM=3`、`MAX_CONCURRENT_JOBS=3`、`MAX_PENDING_JOBS=30`。実際のproject Dashboard上限を当日確認し、それ以下へ設定する。
 
-台帳は初回・消失・認証世代変更時に停止状態、割当0から始まる。会話・知識・cacheを初期化しても使用済みcallは戻らない。送信後のtimeout／接続断は課金状態不明として枠を戻さず、自動再送しない。
-
-## Streamlit Community Cloud
-
-詳細は [docs/deployment.md](docs/deployment.md)。概略は次のとおり。
-
-1. 秘密検査とCIを通した指定branchをGitHubへpush
-2. Community Cloudでentrypointを`app.py`、Pythonを3.12に設定
-3. `.streamlit/secrets.example.toml`と同じキーをCloud Secretsへ実値で登録
-4. 専用OpenAIプロジェクトで強制停止型支出上限と利用可能モデルを確認
-5. 管理画面で有限call枠を有効化
-6. 未認証、2つの独立ブラウザ、実API主シナリオ、段階的な1→5→10→30セッションを確認
-
-GitHub owner、remote、Cloud権限、実Secrets、公開URLはこのリポジトリでは未設定。仮URLを稼働URLとして記載しない。
+台帳は初回、消失、認証世代変更時に停止・割当0から始まる。workspaceや会話を初期化しても利用済みcallは戻らない。timeout・接続断は課金状態不明として枠を戻さず、自動再送しない。
 
 ## 講演用操作
 
-約6分の手順は [docs/demo_script.md](docs/demo_script.md)。
+詳細は [docs/demo_script_v5.md](docs/demo_script_v5.md)。主な流れは次のとおり。
 
-1. 「最初から体験」で保全記録1を抽出
-2. 経験談から追加質問を作り、回答を反映
-3. pending案を人が知識項目3 v1として承認
-4. 主質問で検索・グラフ・原文ツールと根拠を表示
-5. 聞き取り記録2から校正確認の更新案を作成
-6. 承認前に検索へ入らないことを確認し、v2として承認
-7. 「新しい会話」で履歴だけを消し、同じ質問からv2と新出典を確認
+1. ログイン時に「実務デモを開始（初期12件）」を選ぶ
+2. 「知識を探す」で`冷却器1 流量低下`を非課金検索し、文書またはQ&Aの原文を見る
+3. 「知識を追加・補足する」で保全記録1を抽出し、文書だけのpending案を作る
+4. 「更新案・実回答比較」で内容と原文を確認し、対象事例v1を承認する
+5. 文書版の比較回答Aを空履歴で実行する
+6. 本人役の開始発言、判断理由、適用範囲を回答し、補足pending案を作って承認する
+7. 同じ質問を空履歴で実行してBを保存し、A/Bの版、fact、出典を比べる
+8. Bの実候補へ校正確認条件を補足し、承認後にCを実行してB/Cを比べる
+9. 通常相談では「なぜ」「どの記録」「流量が低い場合」を追質問する
 
-API障害時はアプリ外の録画を「記録の再生」と明示して使用する。アプリが固定回答や録画へ自動切替する機能はない。
+API障害時は処理を停止する。録画や静止画を使う場合、講演者がアプリ外で「記録の再生」と明示し、アプリの成功結果にはしない。
+
+## Streamlit Community Cloud
+
+詳細は [docs/deployment.md](docs/deployment.md)。運営者が行う作業は次のとおり。
+
+1. 最終検査済みbranchを指定GitHub repositoryへpushする
+2. Community Cloudでentrypointを`app.py`、Pythonを3.12に設定する
+3. `.streamlit/secrets.example.toml`と同じキーをCloud Secretsへ実値で登録する
+4. `APP_ENV="cloud"`を設定する
+5. 専用OpenAI projectのモデル利用可否、レート、強制停止型支出上限を確認する
+6. 起動後、管理画面で有限call枠を有効化する
+7. 未認証、2ブラウザ分離、主シナリオ、1→5→10→30 sessionの段階試験を行う
+
+GitHub remote、Cloud URL、Cloud Secrets、公開操作はこの実装作業では設定しない。仮URLを稼働URLとして記載しない。
 
 ## 障害時の挙動
 
-- 正常検索0件: `insufficient_evidence`。検索済みであることを示す
-- 検索／グラフ／原文取得失敗: jobを`failed`にし、根拠の有無を断定しない
-- timeout／接続断: `indeterminate`。同一callを自動再送しない
-- structured output／根拠ID／版の不整合: `validation_failed`。部分結果・自動修復なし
-- 待機列満杯／期限切れ: 受付拒否または`expired`。API枠を消費しない
-- 取消後の遅着結果: 利用台帳だけ確定し、回答やpending案へ公開しない
-- DB／利用台帳消失: seedや満額へ自動復旧せず停止
-- Graphviz表示だけの失敗: 確定済み回答・保存結果は維持し、図の表示障害として分離
+- 通常検索0件: 成功した0件として明示
+- 検索、グラフ、原文取得失敗: `failed`とし、知識なしとは表示しない
+- timeout、接続断: `indeterminate`。同一操作を自動再送しない
+- structured output、根拠ID、版の不整合: 検証失敗。部分採用・自動JSON修復なし
+- 待機列満杯、期限切れ: 受付拒否または`expired`。未送信ならAPI枠を消費しない
+- 取消後の遅着: 回答やpending案を公開しない
+- DB、台帳消失: seedや満額へ黙って復元せず停止
+- A/B/C記録なし・失敗: 「比較用の実行記録なし」または失敗コードを表示し、模範文で埋めない
 
-一覧は [docs/failure_matrix.md](docs/failure_matrix.md)。
-
-## テスト
-
-通常のテストは実APIを呼ばない。
+## 非課金テスト
 
 ```bash
 uv sync --locked
@@ -102,40 +117,28 @@ uv run --locked python scripts/check_repository_safety.py
 uv run --locked python scripts/run_load_test.py --sessions 30
 ```
 
-liveテストは`RUN_LIVE_TESTS=1`、実設定、参加者パスワード、管理者が有効化した有限台帳がそろう場合だけ実行する。
+通常CIは実APIを呼ばない。liveテストは`RUN_LIVE_TESTS=1`、実設定、参加者パスワード、有限台帳がすべてそろう場合だけ実行する。v3のlive結果をv5の実績として流用しない。
 
-```bash
-RUN_LIVE_TESTS=1 LIVE_TEST_PARTICIPANT_PASSWORD='...' \
-  uv run --locked --env-file .env pytest -m live
-```
-
-ユーザーが外部Spend limitを確認済みの場合だけ、全主シナリオを一時DB・有限call枠で検証できる。実行結果にAPIキーや本文は出力しない。
-
-```bash
-RUN_LIVE_TESTS=1 uv run --locked --env-file .env python \
-  scripts/run_live_validation.py --mode full --reasoning-effort low \
-  --call-budget 24 --confirmed-external-limit
-```
-
-## 主な構成
+## 構成
 
 ```text
-app.py                     Streamlit entrypoint
-wg4_demo/                  認証、DB、検索、グラフ、LLM、Agent、Queue、UI
-data/                      架空seed、ontology、vocabulary、デモ入力
-prompts/                   抽出・質問・回答・更新の制約
-tests/                     非課金unit/AppTest/障害/queueと明示的liveテスト
-scripts/                   ハッシュ、preflight、秘密検査、30-session模擬負荷
-docs/                      deploy、運用、デモ、検証報告
-runtime/                   実行時DB（Git管理外）
+app.py                       Streamlit entrypoint
+wg4_demo/                    認証、DB、seed、検索、会話、LLM、Agent、Queue、UI
+data/knowledge_seed_v5.json  初期12件の架空教材manifest
+data/demo_inputs_v5.json     講演中に初めて送る入力例
+prompts/                     抽出、聞き取り、補足、回答、更新の制約
+tests/                       非課金unit・integration・AppTest・queue・live gate
+scripts/                     preflight、秘密検査、30-session模擬負荷、live検証
+docs/                        v5受入条件、操作、seedカタログ、deploy、検証報告
+runtime/                     実行時DB（Git管理外）
 ```
 
-## 限界
+## 限界・既知のリスク
 
-- 共有パスワードは個人認証・企業監査・機密データ管理の代替ではない
-- SQLiteと単一Cloudプロセスを前提とし、再起動をまたぐ完遂や複数replicaを保証しない
-- Cloud上の知識と台帳の永続性を保証しない。台帳消失後は管理者確認が必要
-- 文字列検索と小さな語彙規則であり、一般的な日本語理解・全矛盾検出・原因診断を保証しない
-- Structured Outputsは形式を制御するだけで、内容の正しさを保証しない
-- 30人対応は公開予定環境の実API／Cloud負荷試験を終えるまで保証しない
-- 実設備の安全性・工学的妥当性を検証したアプリではない
+- 共有パスワードは個人認証、企業監査、機密データ管理の代替ではない
+- SQLiteと単一Cloudプロセス前提で、再起動をまたぐ完遂、複数replica、永続保存を保証しない
+- 決定的検索は文字列bigramと小規模語彙規則で、一般的な日本語理解や診断精度を保証しない
+- 会話状態の分類は明示語を使う決定的規則で、曖昧な表現は対象確認が必要
+- Structured Outputsは形式を制約するが、内容の正しさは人の原文レビューが必要
+- 初期12件と追加事例は架空教材で、実務上の安全性・工学的妥当性の証拠ではない
+- v5の実API所要時間、call/token、Cloud実ブラウザ、Cloud 30-session負荷は別途検証するまで未確認

@@ -42,6 +42,8 @@ class ToolRuntimeContext:
     evidence: EvidenceService
     max_tool_calls: int
     submitted_segment_ids: set[str] = field(default_factory=set)
+    answer_intent: str = "candidate_search"
+    focus_knowledge_ids: set[str] = field(default_factory=set)
     trace: ToolTrace = field(default_factory=ToolTrace)
     staged_proposal_id: str | None = None
     is_active: Callable[[], bool] = lambda: True

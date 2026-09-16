@@ -26,7 +26,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from wg4_demo.errors import AppError
 from wg4_demo.jobs import JobRecord
-from wg4_demo.schemas import TERMINAL_JOB_STATES, CauseStatus, FactKind, JobState, Role
+from wg4_demo.schemas import (
+    TERMINAL_JOB_STATES,
+    CauseStatus,
+    FactKind,
+    JobState,
+    KnowledgeDraft,
+    OperationType,
+    ProposalOperation,
+    Role,
+)
 from wg4_demo.services import Services, build_services
 from wg4_demo.settings import Settings, settings_from_environment
 
@@ -146,8 +155,8 @@ def run_job(
             "max_output_tokens": services.settings.max_output_tokens,
             "reasoning_effort": services.settings.openai_reasoning_effort,
         },
-        prompt_version="wg4-prompts-v12",
-        schema_version="wg4-schema-v1",
+        prompt_version="wg4-prompts-v13",
+        schema_version="wg4-schema-v2",
         dedupe_key=str(uuid4()),
     )
     services.scheduler.wake()
@@ -243,7 +252,6 @@ def extract_only(services: Services, session_id: str) -> dict[str, Any]:
     workspace = services.repository.create_workspace(
         session_id,
         seed_mode="from_scratch",
-        seed_path=PROJECT_ROOT / "data/approved_seed.json",
     )
     conversation = services.repository.create_conversation(workspace.id)
     segments, _, _ = register_fixture_sources(services, workspace.id)
@@ -313,7 +321,6 @@ def full(services: Services, session_id: str) -> dict[str, Any]:
     workspace = services.repository.create_workspace(
         session_id,
         seed_mode="from_scratch",
-        seed_path=PROJECT_ROOT / "data/approved_seed.json",
     )
     conversation = services.repository.create_conversation(workspace.id)
     segments, interview, demo = register_fixture_sources(services, workspace.id)
@@ -490,6 +497,339 @@ def full(services: Services, session_id: str) -> dict[str, Any]:
     }
 
 
+def _v5_draft_payload(item: Any) -> dict[str, Any]:
+    return {
+        "facts": [
+            {
+                "kind": fact.kind.value,
+                "text": fact.text,
+                "condition_scope": fact.condition_scope.value if fact.condition_scope else None,
+                "parent_action_fact_id": fact.parent_action_fact_id,
+                "evidence": [
+                    {"segment_id": ref.segment_id, "quote": ref.quote} for ref in fact.evidence_refs
+                ],
+            }
+            for fact in item.facts
+        ],
+        "cause_status": item.cause_status.value,
+        "missing_fields": item.missing_fields,
+    }
+
+
+def _v5_comparison(
+    services: Services,
+    *,
+    session_id: str,
+    workspace_id: str,
+    item: Any,
+    question: str,
+    stage: str,
+) -> tuple[dict[str, Any], float]:
+    conversation = services.repository.create_conversation(workspace_id)
+    state = services.conversations.prepare_turn(
+        workspace_id, conversation, question, selected_knowledge_id=item.id
+    )
+    services.repository.append_message(workspace_id, conversation, role="user", text=question)
+    return run_job(
+        services,
+        session_id=session_id,
+        workspace_id=workspace_id,
+        conversation_id=conversation,
+        mode="qa",
+        phase=f"comparison_{stage}",
+        payload={
+            "question": question,
+            "consultation": state.model_dump(mode="json"),
+            "comparison_stage": stage,
+            "empty_history": True,
+            "target_item_id": item.id,
+            "target_version": item.version,
+        },
+    )
+
+
+def full_v5(services: Services, session_id: str) -> dict[str, Any]:
+    """Run the v5 A/B/C scenario only behind the explicit live gate."""
+
+    demo = json.loads((PROJECT_ROOT / "data/demo_inputs_v5.json").read_text("utf-8"))
+    workspace = services.repository.create_workspace(
+        session_id,
+        seed_mode="practical_v5",
+        seed_path=PROJECT_ROOT / "data/knowledge_seed_v5.json",
+    )
+    setup_conversation = services.repository.create_conversation(workspace.id)
+    timings: dict[str, float] = {}
+    _, document_mapping = services.repository.register_source(
+        workspace.id,
+        title=demo["document"]["title"],
+        kind="document",
+        equipment=demo["document"]["equipment"],
+        case_label=demo["document"]["case"],
+        external_key=f"live-v5-document-{uuid4()}",
+        segments=[(f"live-v5-document-p1-{uuid4()}", "document", demo["document"]["text"])],
+    )
+    document_segment_id = next(iter(document_mapping.values()))
+    document_segments = [
+        {
+            "segment_id": document_segment_id,
+            "text": demo["document"]["text"],
+            "speaker": "document",
+        }
+    ]
+    extraction, timings["extract"] = run_job(
+        services,
+        session_id=session_id,
+        workspace_id=workspace.id,
+        conversation_id=setup_conversation,
+        mode="extract",
+        payload={"segments": document_segments},
+    )
+    validate_draft(extraction["draft"], document_segments)
+    draft = KnowledgeDraft.model_validate(extraction["draft"])
+    document_proposal = services.repository.stage_proposal(
+        workspace.id,
+        action_id=f"live-v5-document-proposal-{uuid4()}",
+        target_item_id=None,
+        base_version=0,
+        operations=[
+            ProposalOperation(operation=OperationType.ADD_FACT, new_fact=fact)
+            for fact in draft.facts
+        ],
+        reason="v5 live document-only version",
+        equipment=demo["document"]["equipment"],
+        case_label=demo["document"]["case"],
+        title="温度計交換後の出口温度表示",
+        missing_fields=draft.missing_fields,
+        cause_status=draft.cause_status,
+        allowed_segment_ids={document_segment_id},
+    )
+    services.repository.publish_proposal(workspace.id, document_proposal.id)
+    document_approval = services.approvals.approve(
+        session_id=session_id,
+        workspace_id=workspace.id,
+        proposal_id=document_proposal.id,
+        expected_content_hash=document_proposal.content_hash,
+    )
+    item = services.repository.get_knowledge(workspace.id, document_approval.item_id)
+    if item.version != 1 or len(services.repository.list_knowledge(workspace.id)) != 13:
+        raise RuntimeError("v5 document approval did not create one thirteenth item")
+
+    answer_a, timings["qa_a"] = _v5_comparison(
+        services,
+        session_id=session_id,
+        workspace_id=workspace.id,
+        item=item,
+        question=demo["comparison_question"],
+        stage="A",
+    )
+
+    _, opening_mapping = services.repository.register_source(
+        workspace.id,
+        title=demo["interview"]["title"],
+        kind="interview",
+        equipment=item.equipment,
+        case_label=item.case_label,
+        external_key=f"live-v5-opening-{uuid4()}",
+        segments=[(f"live-v5-opening-p1-{uuid4()}", "operator", demo["interview"]["opening"])],
+    )
+    opening = {
+        "segment_id": next(iter(opening_mapping.values())),
+        "text": demo["interview"]["opening"],
+        "speaker": "operator",
+    }
+    statements = [opening]
+    first_question, timings["interview_reason_question"] = run_job(
+        services,
+        session_id=session_id,
+        workspace_id=workspace.id,
+        conversation_id=setup_conversation,
+        mode="interview",
+        payload={"draft": _v5_draft_payload(item), "statements": statements},
+    )
+    if not any(term in first_question["question"] for term in ("理由", "なぜ", "考え")):
+        raise RuntimeError("v5 interview did not advance to the decision reason")
+    _, reason_mapping = services.repository.register_source(
+        workspace.id,
+        title="聞き取り記録1（理由）",
+        kind="interview",
+        equipment=item.equipment,
+        case_label=item.case_label,
+        external_key=f"live-v5-reason-{uuid4()}",
+        segments=[
+            (f"live-v5-reason-q-{uuid4()}", "assistant", first_question["question"]),
+            (f"live-v5-reason-a-{uuid4()}", "operator", demo["interview"]["reason_reply"]),
+        ],
+    )
+    reason_ids = list(reason_mapping.values())
+    statements.extend(
+        [
+            {
+                "segment_id": reason_ids[0],
+                "text": first_question["question"],
+                "speaker": "assistant",
+            },
+            {
+                "segment_id": reason_ids[1],
+                "text": demo["interview"]["reason_reply"],
+                "speaker": "operator",
+            },
+        ]
+    )
+    second_question, timings["interview_scope_question"] = run_job(
+        services,
+        session_id=session_id,
+        workspace_id=workspace.id,
+        conversation_id=setup_conversation,
+        mode="interview",
+        payload={"draft": _v5_draft_payload(item), "statements": statements},
+    )
+    _, scope_mapping = services.repository.register_source(
+        workspace.id,
+        title="聞き取り記録1（適用範囲）",
+        kind="interview",
+        equipment=item.equipment,
+        case_label=item.case_label,
+        external_key=f"live-v5-scope-{uuid4()}",
+        segments=[
+            (f"live-v5-scope-q-{uuid4()}", "assistant", second_question["question"]),
+            (f"live-v5-scope-a-{uuid4()}", "operator", demo["interview"]["scope_reply"]),
+        ],
+    )
+    scope_ids = list(scope_mapping.values())
+    statements.extend(
+        [
+            {
+                "segment_id": scope_ids[0],
+                "text": second_question["question"],
+                "speaker": "assistant",
+            },
+            {
+                "segment_id": scope_ids[1],
+                "text": demo["interview"]["scope_reply"],
+                "speaker": "operator",
+            },
+        ]
+    )
+    allowed_ids = [
+        statement["segment_id"] for statement in statements if statement["speaker"] == "operator"
+    ]
+    supplement, timings["supplement"] = run_job(
+        services,
+        session_id=session_id,
+        workspace_id=workspace.id,
+        conversation_id=setup_conversation,
+        mode="supplement",
+        payload={
+            "target_item_id": item.id,
+            "target_version": item.version,
+            "statements": statements,
+            "allowed_segment_ids": allowed_ids,
+        },
+    )
+    supplement_proposal = services.repository.get_proposal(workspace.id, supplement["proposal_id"])
+    supplement_approval = services.approvals.approve(
+        session_id=session_id,
+        workspace_id=workspace.id,
+        proposal_id=supplement_proposal.id,
+        expected_content_hash=supplement_proposal.content_hash,
+    )
+    if supplement_approval.after_version != 2:
+        raise RuntimeError("v5 interview supplement did not create v2")
+    item = services.repository.get_knowledge(workspace.id, item.id)
+    answer_b, timings["qa_b"] = _v5_comparison(
+        services,
+        session_id=session_id,
+        workspace_id=workspace.id,
+        item=item,
+        question=demo["comparison_question"],
+        stage="B",
+    )
+    b_candidate = next(
+        (
+            candidate
+            for candidate in answer_b["selection"]["candidates"]
+            if candidate["knowledge_id"] == item.id and candidate["version"] == 2
+        ),
+        None,
+    )
+    if b_candidate is None or not (
+        {reason_ids[1], scope_ids[1]} & set(b_candidate["evidence_segment_ids"])
+    ):
+        raise RuntimeError("answer B did not retrieve the approved interview evidence")
+
+    _, feedback_mapping = services.repository.register_source(
+        workspace.id,
+        title=demo["feedback"]["title"],
+        kind="interview",
+        equipment=item.equipment,
+        case_label=item.case_label,
+        external_key=f"live-v5-feedback-{uuid4()}",
+        segments=[(f"live-v5-feedback-p1-{uuid4()}", "operator", demo["feedback"]["text"])],
+    )
+    feedback_segment_id = next(iter(feedback_mapping.values()))
+    feedback, timings["feedback"] = run_job(
+        services,
+        session_id=session_id,
+        workspace_id=workspace.id,
+        conversation_id=setup_conversation,
+        mode="update",
+        payload={
+            "statement": demo["feedback"]["text"],
+            "submitted_segment_ids": [feedback_segment_id],
+            "target_knowledge_id": item.id,
+            "target_version": item.version,
+            "equipment": item.equipment,
+            "answer_action_id": next(
+                snapshot.action_id
+                for snapshot in services.repository.list_answer_snapshots(workspace.id)
+                if snapshot.stage == "B"
+            ),
+        },
+    )
+    feedback_proposal = services.repository.get_proposal(workspace.id, feedback["proposal_id"])
+    if services.repository.get_knowledge(workspace.id, item.id).version != 2:
+        raise RuntimeError("pending feedback changed approved knowledge")
+    feedback_approval = services.approvals.approve(
+        session_id=session_id,
+        workspace_id=workspace.id,
+        proposal_id=feedback_proposal.id,
+        expected_content_hash=feedback_proposal.content_hash,
+    )
+    if feedback_approval.after_version != 3:
+        raise RuntimeError("v5 feedback did not create v3")
+    item = services.repository.get_knowledge(workspace.id, item.id)
+    answer_c, timings["qa_c"] = _v5_comparison(
+        services,
+        session_id=session_id,
+        workspace_id=workspace.id,
+        item=item,
+        question=demo["comparison_question"],
+        stage="C",
+    )
+    if not any(
+        candidate["knowledge_id"] == item.id
+        and candidate["version"] == 3
+        and feedback_segment_id in candidate["evidence_segment_ids"]
+        for candidate in answer_c["selection"]["candidates"]
+    ):
+        raise RuntimeError("answer C did not retrieve v3 with feedback evidence")
+    snapshots = services.repository.list_answer_snapshots(workspace.id)
+    if [snapshot.stage for snapshot in snapshots] != ["A", "B", "C"]:
+        raise RuntimeError("v5 comparison snapshots are incomplete")
+    return {
+        "timings_seconds": {key: round(value, 3) for key, value in timings.items()},
+        "answer_tools": {
+            "A": answer_a["tools"],
+            "B": answer_b["tools"],
+            "C": answer_c["tools"],
+        },
+        "final_version": item.version,
+        "knowledge_count": len(services.repository.list_knowledge(workspace.id)),
+        "comparison_stages": [snapshot.stage for snapshot in snapshots],
+        "usage": usage_summary(services.settings.control_db_path),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=["extract", "smoke", "full"], required=True)
@@ -518,7 +858,7 @@ def main() -> int:
             elif args.mode == "smoke":
                 result = smoke(services, participant_id)
             else:
-                result = full(services, participant_id)
+                result = full_v5(services, participant_id)
         except AppError as exc:
             print(json.dumps({"status": "failed", "code": exc.code, "stage": exc.stage}))
             return 1

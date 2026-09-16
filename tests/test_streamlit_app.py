@@ -74,24 +74,21 @@ def test_authenticated_navigation_keeps_api_disabled(
 
     assert not app.exception
     navigation = next(widget for widget in app.radio if widget.label == "画面")
-    navigation.set_value("知識を確認")
+    navigation.set_value("知識を探す")
     app.run()
     assert not app.exception
-    assert app.header[0].value == "2. 知識を確認"
+    assert app.header[0].value == "1. 知識を探す"
     assert app.download_button
+    assert any(button.label == "検索する（API不使用）" for button in app.button)
 
     navigation = next(widget for widget in app.radio if widget.label == "画面")
-    navigation.set_value("更新案を確認")
+    navigation.set_value("更新案・実回答比較")
     app.run()
     assert not app.exception
-    assert app.header[0].value == "4. 更新案を作成・確認"
-    assert any(expander.label == "この画面で行うこと" for expander in app.expander)
-    update_button = next(
-        button for button in app.button if button.label == "この発言から更新案を作る"
-    )
-    assert update_button.disabled is True
+    assert app.header[0].value == "4. 更新案・実回答比較"
+    assert any(expander.label == "この画面で今すること" for expander in app.expander)
     assert any(
-        "文書・経験を登録" in markdown.value
+        "知識を追加・補足する" in markdown.value
         for markdown in app.markdown
         if isinstance(markdown.value, str)
     )
@@ -165,18 +162,13 @@ def test_authenticated_navigation_keeps_api_disabled(
     app.run()
 
     assert not app.exception
-    assert app.subheader[0].value == "いま行う：人の確認待ち"
-    assert any(expander.label == "合格基準を見る" for expander in app.expander)
-    assert any(expander.label == "原文の根拠を確認" for expander in app.expander)
+    assert app.subheader[0].value == "人の確認待ち"
+    assert any(expander.label == "原文と差分を照合" for expander in app.expander)
     assert any(
-        checkbox.label == "内容、factの種類、未確認事項、原文根拠を確認しました"
+        checkbox.label == "追加内容、fact種別、確定度、未確認事項、原文を照合しました"
         for checkbox in app.checkbox
     )
     approve_button = next(button for button in app.button if button.label == "確認してv1として承認")
     assert approve_button.disabled is True
-    update_button = next(
-        button for button in app.button if button.label == "この発言から更新案を作る"
-    )
-    assert update_button.disabled is True
     services.scheduler.stop()
     _services.clear()

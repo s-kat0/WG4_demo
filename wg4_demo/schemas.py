@@ -30,6 +30,7 @@ class FactKind(StrEnum):
 
 class ConditionScope(StrEnum):
     CASE_CONTEXT = "case_context"
+    APPLICABILITY = "applicability"
     ACTION_PREREQUISITE = "action_prerequisite"
     EXCLUSION = "exclusion"
 
@@ -166,6 +167,7 @@ class AnswerCandidate(StrictModel):
     action_fact_id: str
     condition_fact_ids: list[str] = Field(max_length=12)
     evidence_segment_ids: list[str] = Field(min_length=1, max_length=6)
+    supporting_fact_ids: list[str] = Field(default_factory=list, max_length=12)
 
 
 class ClarificationRequest(StrictModel):
@@ -174,6 +176,9 @@ class ClarificationRequest(StrictModel):
 
 
 class AnswerSelection(StrictModel):
+    intent: Literal[
+        "candidate_search", "reason_explanation", "evidence_lookup", "condition_comparison"
+    ] = "candidate_search"
     status: Literal["candidates", "needs_clarification", "insufficient_evidence", "conflict"]
     candidates: list[AnswerCandidate] = Field(max_length=3)
     clarification_requests: list[ClarificationRequest] = Field(max_length=3)
@@ -202,9 +207,12 @@ class SessionRecord(StrictModel):
 class SearchHit(StrictModel):
     knowledge_id: str
     display_name: str
+    title: str
     version: int
     equipment: str
     case_label: str | None
+    source_kind: Literal["document", "interview", "mixed"]
+    origin_label: str
     score: float
     fact_ids: list[str]
     evidence_segment_ids: list[str]
@@ -216,6 +224,23 @@ class SearchSuccess(StrictModel):
     hits: list[SearchHit]
     executed_at: datetime
     kb_revision: int
+
+
+class ConsultationIntent(StrEnum):
+    CANDIDATE_SEARCH = "candidate_search"
+    REASON_EXPLANATION = "reason_explanation"
+    EVIDENCE_LOOKUP = "evidence_lookup"
+    CONDITION_COMPARISON = "condition_comparison"
+
+
+class ConversationState(StrictModel):
+    equipment: str | None = None
+    actual_context: list[str] = Field(default_factory=list, max_length=6)
+    hypothetical_context: list[str] = Field(default_factory=list, max_length=6)
+    focus_answer_id: str | None = None
+    focus_knowledge_ids: list[str] = Field(default_factory=list, max_length=3)
+    last_intent: ConsultationIntent = ConsultationIntent.CANDIDATE_SEARCH
+    reference_is_ambiguous: bool = False
 
 
 class JobState(StrEnum):

@@ -138,6 +138,8 @@ class UsageLedger:
         now: datetime | None = None,
     ) -> CallReservation:
         current = now or datetime.now(UTC)
+        if self.settings.live_blockers(now=current):
+            raise ConfigurationError("実API送信条件がそろっていないためLLM機能を停止しました。")
         self.auth.require_session(session_id, role=Role.PARTICIPANT, now=current)
         if model != self.settings.openai_model:
             raise AppError("model_not_allowed", "設定されたモデル以外は利用できません。", "policy")

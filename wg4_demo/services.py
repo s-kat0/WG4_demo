@@ -8,6 +8,7 @@ from pathlib import Path
 from wg4_demo.agent_runtime import AgentService, PromptStore, StructuredWorkflowService
 from wg4_demo.approvals import ApprovalService
 from wg4_demo.auth import AuthService
+from wg4_demo.conversation import ConversationService
 from wg4_demo.evidence import EvidenceService
 from wg4_demo.export import ExportService
 from wg4_demo.graph import GraphService
@@ -33,6 +34,7 @@ class Services:
     retrieval: RetrievalService
     graph: GraphService
     evidence: EvidenceService
+    conversations: ConversationService
     approvals: ApprovalService
     exporter: ExportService
 
@@ -44,6 +46,7 @@ def build_services(settings: Settings, *, project_root: Path) -> Services:
     retrieval = RetrievalService(repository, project_root / "data" / "vocabulary.json")
     graph = GraphService(repository)
     evidence = EvidenceService(repository)
+    conversations = ConversationService(repository)
     validator = ResultValidator(repository)
     gateway = LLMGateway(settings, ledger)
     prompts = PromptStore(project_root / "prompts")
@@ -66,6 +69,7 @@ def build_services(settings: Settings, *, project_root: Path) -> Services:
         {
             "extract": runner,
             "interview": runner,
+            "supplement": runner,
             "reflect": runner,
             "qa": runner,
             "update": runner,
@@ -83,6 +87,7 @@ def build_services(settings: Settings, *, project_root: Path) -> Services:
         retrieval=retrieval,
         graph=graph,
         evidence=evidence,
+        conversations=conversations,
         approvals=ApprovalService(repository, auth),
         exporter=ExportService(repository, auth),
     )

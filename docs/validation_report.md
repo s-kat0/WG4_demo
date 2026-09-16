@@ -25,7 +25,7 @@
 | `uv run --locked ruff format --check .` | 成功（67 files already formatted） |
 | `uv run --locked mypy wg4_demo scripts/run_live_validation.py` | 成功（33 source files） |
 | `uv run --locked pip-audit --cache-dir /private/tmp/wg4-demo-pip-audit-cache` | 既知脆弱性0件 |
-| `uv run --locked python scripts/check_repository_safety.py` | 成功（83 tracked files） |
+| `uv run --locked python scripts/check_repository_safety.py` | 成功（84 tracked files） |
 | `uv run --locked python scripts/run_load_test.py --sessions 30 --delay 0.05` | 30完了、0失敗、最大同時実行3、median 1.3704秒、p95 1.6709秒、外部API呼び出し0 |
 
 skipは`RUN_LIVE_TESTS=1`が明示されていない実API試験1件。Git追跡対象にはplaceholderだけの`.env.example`と`.streamlit/secrets.example.toml`を含み、実`.env`、実Secrets、runtime DB、log、export、recording、展開用ディレクトリは含まない。

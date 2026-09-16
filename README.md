@@ -4,6 +4,8 @@
 
 このアプリは実設備の診断・操作指示には使用できない。入力はOpenAI APIへ送信されるため、機密情報・個人情報・実際の現場記録を入力しないこと。
 
+別のコーディングエージェントへ引き継ぐ場合は、最初に [CODING_AGENT_HANDOFF.md](CODING_AGENT_HANDOFF.md) を読み、詳細判断では [SPEC.md](SPEC.md) をsingle source of truthとして参照すること。
+
 ## 実装範囲
 
 - 文書抽出、追加質問、回答反映、更新案作成のStructured Outputs

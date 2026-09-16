@@ -72,7 +72,11 @@ pytestのskip 1件は、`RUN_LIVE_TESTS=1`が明示されていない既存live 
 
 2026-09-17に`gpt-5.6-luna`、reasoning `low`、最大30 call、同時実行1、SDK retry 0の条件で、v5 full検証を1回実行した。最初の文書抽出APIは完了したが、結果をDBのJSON payloadから`KnowledgeDraft`へ戻す箇所がPydanticのPython strict modeで正当なenum文字列を拒否し、`ValidationError`で停止した。固定結果や別モデルへ切り替えず、A/B/Cの後続処理と自動再送は行っていない。
 
-原因箇所は、保存JSONをJSON modeで厳格検証するよう修正した。同じ復元処理を使うStreamlit文書登録画面も修正し、JSON round-trip回帰テストを追加した。修正後の非課金テスト・静的検査・30 session負荷試験は成功している。修正後のv5 full実API再検証は、別の明示的な実行としてまだ行っていないため、A/B/Cの実API成功、所要時間、call数、token量は未確認。
+原因箇所は、保存JSONをJSON modeで厳格検証するよう修正した。同じ復元処理を使うStreamlit文書登録画面も修正し、JSON round-trip回帰テストを追加した。修正後の非課金テスト・静的検査・30 session負荷試験は成功している。
+
+同日に修正後のv5 full検証を別の新規実行として1回実施した。文書抽出と対象事例v1の承認までは完了したが、比較Aで`validation_top_candidate_missing`となり停止した。比較処理が知識項目13を明示選択していた一方、検証器が通常候補検索の検索1位を常に要求していたためである。固定候補への置換や後続B/C、自動再送は行っていない。
+
+明示的な「この知識について相談する」から開始した現在の1ターンだけ、取得済みの選択項目を第1候補として検証するよう修正した。通常の候補検索では検索1位規則を維持し、版・fact・原文・workspaceの検証も変更していない。2回目の修正後のv5 full実API検証はまだ行っていないため、A/B/Cの実API成功、所要時間、call数、token量は未確認。今後の失敗時には一時台帳を削除する前に、安全なcall数とtoken数を出力するようlive検証スクリプトを更新した。
 
 過去にprompt v12・旧v3フローで`gpt-5.6-luna`、reasoning `low`のローカル実API検証が成功しているが、その47.5秒・20 calls等をv5の実績へ流用しない。
 

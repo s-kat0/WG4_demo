@@ -272,6 +272,7 @@ class AgentService:
                 tool_context.trace,
                 expected_intent=tool_context.answer_intent,
                 focus_knowledge_ids=tool_context.focus_knowledge_ids,
+                explicit_focus=tool_context.explicit_focus,
             ), tool_context
         except (MaxTurnsExceeded, ModelBehaviorError, ModelRefusalError) as exc:
             raise translate_agent_error(exc) from exc
@@ -331,6 +332,7 @@ class AgentService:
         submitted_segment_ids: set[str] | None = None,
         answer_intent: str = "candidate_search",
         focus_knowledge_ids: set[str] | None = None,
+        explicit_focus: bool = False,
         is_active: Callable[[], bool] = lambda: True,
     ) -> ToolRuntimeContext:
         return ToolRuntimeContext(
@@ -348,6 +350,7 @@ class AgentService:
             submitted_segment_ids=submitted_segment_ids or set(),
             answer_intent=answer_intent,
             focus_knowledge_ids=focus_knowledge_ids or set(),
+            explicit_focus=explicit_focus,
             is_active=is_active,
         )
 

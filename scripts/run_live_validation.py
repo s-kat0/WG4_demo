@@ -529,6 +529,8 @@ def _v5_comparison(
     state = services.conversations.prepare_turn(
         workspace_id, conversation, question, selected_knowledge_id=item.id
     )
+    consultation = state.model_dump(mode="json")
+    consultation["explicit_selected_knowledge_id"] = item.id
     services.repository.append_message(workspace_id, conversation, role="user", text=question)
     return run_job(
         services,
@@ -539,7 +541,7 @@ def _v5_comparison(
         phase=f"comparison_{stage}",
         payload={
             "question": question,
-            "consultation": state.model_dump(mode="json"),
+            "consultation": consultation,
             "comparison_stage": stage,
             "empty_history": True,
             "target_item_id": item.id,
@@ -860,15 +862,41 @@ def main() -> int:
             else:
                 result = full_v5(services, participant_id)
         except AppError as exc:
-            print(json.dumps({"status": "failed", "code": exc.code, "stage": exc.stage}))
+            print(
+                json.dumps(
+                    {
+                        "status": "failed",
+                        "code": exc.code,
+                        "stage": exc.stage,
+                        "total_seconds": round(time.monotonic() - started, 3),
+                        "usage": usage_summary(settings.control_db_path),
+                    }
+                )
+            )
             return 1
         except RuntimeError as exc:
-            print(json.dumps({"status": "failed", "code": "validation_failed", "detail": str(exc)}))
+            print(
+                json.dumps(
+                    {
+                        "status": "failed",
+                        "code": "validation_failed",
+                        "detail": str(exc),
+                        "total_seconds": round(time.monotonic() - started, 3),
+                        "usage": usage_summary(settings.control_db_path),
+                    }
+                )
+            )
             return 1
         except Exception as exc:
             print(
                 json.dumps(
-                    {"status": "failed", "code": "validation_failed", "type": type(exc).__name__}
+                    {
+                        "status": "failed",
+                        "code": "validation_failed",
+                        "type": type(exc).__name__,
+                        "total_seconds": round(time.monotonic() - started, 3),
+                        "usage": usage_summary(settings.control_db_path),
+                    }
                 )
             )
             return 1

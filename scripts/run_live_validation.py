@@ -146,7 +146,7 @@ def run_job(
             "max_output_tokens": services.settings.max_output_tokens,
             "reasoning_effort": services.settings.openai_reasoning_effort,
         },
-        prompt_version="wg4-prompts-v9",
+        prompt_version="wg4-prompts-v10",
         schema_version="wg4-schema-v1",
         dedupe_key=str(uuid4()),
     )

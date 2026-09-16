@@ -38,6 +38,24 @@ class ResultValidator:
             return answer
         if answer.status == "candidates" and not answer.candidates:
             raise ValidationFailure(code="validation_candidate_missing")
+        if answer.status == "candidates" and trace.search_result.hits:
+            top_hit = trace.search_result.hits[0]
+            top_item = self.repository.get_knowledge(
+                workspace_id, top_hit.knowledge_id, top_hit.version
+            )
+            top_is_applicable = (
+                any(fact.kind is FactKind.CHECK_ACTION for fact in top_item.facts)
+                and "contradicted" not in top_hit.condition_matches.values()
+            )
+            first = answer.candidates[0]
+            if top_is_applicable and (first.knowledge_id, first.version) != (
+                top_hit.knowledge_id,
+                top_hit.version,
+            ):
+                raise ValidationFailure(
+                    "適用可能な検索1位の最新版が第1候補に含まれていません。",
+                    code="validation_top_candidate_missing",
+                )
         acquired = {(hit.knowledge_id, hit.version): hit for hit in trace.search_result.hits}
         for candidate in answer.candidates:
             key = (candidate.knowledge_id, candidate.version)

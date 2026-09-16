@@ -7,7 +7,7 @@ import streamlit as st
 
 from wg4_demo.repository import KnowledgeRecord
 from wg4_demo.services import Services
-from wg4_demo.ui.common import active_job_exists, show_action_error
+from wg4_demo.ui.common import active_job_exists, navigate_to, show_action_error
 
 SOURCE_LABELS: dict[str, Literal["document", "interview", "mixed"] | None] = {
     "すべて": None,
@@ -142,5 +142,4 @@ def _render_hit(services: Services, item: KnowledgeRecord, *, score: float) -> N
         ):
             st.session_state.consult_knowledge_id = item.id
             st.session_state.consult_question = f"{item.title}について、何を確認すべきですか。"
-            st.session_state.nav_page = "エージェントに相談する"
-            st.rerun()
+            navigate_to("エージェントに相談する")

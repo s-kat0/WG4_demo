@@ -11,7 +11,7 @@ from wg4_demo.schemas import Role
 from wg4_demo.services import Services, build_services
 from wg4_demo.settings import settings_from_mapping
 from wg4_demo.ui import admin, knowledge, login, qa, register, review
-from wg4_demo.ui.common import render_job_status
+from wg4_demo.ui.common import PAGES, apply_navigation_request, render_job_status
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -74,18 +74,12 @@ def main() -> None:
 四段階ガイドは同じ処理への案内です。未承認情報は通常検索へ入りません。
                 """
             )
-        pages = [
-            "知識を探す",
-            "エージェントに相談する",
-            "知識を追加・補足する",
-            "更新案・実回答比較",
-            "管理",
-        ]
-        if st.session_state.get("nav_page") not in pages:
-            st.session_state.nav_page = pages[0]
+        apply_navigation_request()
+        if st.session_state.get("nav_page") not in PAGES:
+            st.session_state.nav_page = PAGES[0]
         page = st.radio(
             "画面",
-            pages,
+            PAGES,
             key="nav_page",
         )
         if st.button("ログアウト"):

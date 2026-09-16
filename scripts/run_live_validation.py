@@ -156,8 +156,8 @@ def run_job(
             "max_output_tokens": services.settings.max_output_tokens,
             "reasoning_effort": services.settings.openai_reasoning_effort,
         },
-        prompt_version="wg4-prompts-v13",
-        schema_version="wg4-schema-v2",
+        prompt_version="wg4-interview-v2" if mode == "interview" else "wg4-prompts-v13",
+        schema_version="wg4-interview-turn-v2" if mode == "interview" else "wg4-schema-v2",
         dedupe_key=str(uuid4()),
     )
     services.scheduler.wake()
@@ -180,6 +180,18 @@ def run_job(
         time.sleep(0.1)
     services.jobs.cancel(session_id=session_id, job_id=job.job_id)
     raise RuntimeError(f"{phase_name} monitor timeout; cancellation requested")
+
+
+def require_interview_question(payload: dict[str, Any], phase: str) -> tuple[str, str]:
+    if payload.get("status") != "ask":
+        raise RuntimeError(f"{phase} completed before the required question was collected")
+    question = payload.get("question")
+    topic = payload.get("topic")
+    if not isinstance(question, str) or not question:
+        raise RuntimeError(f"{phase} returned no question")
+    if not isinstance(topic, str) or not topic:
+        raise RuntimeError(f"{phase} returned no question topic")
+    return question, topic
 
 
 def register_fixture_sources(
@@ -358,7 +370,8 @@ def full(services: Services, session_id: str) -> dict[str, Any]:
         mode="interview",
         payload={"draft": extraction["draft"], "statements": [opening]},
     )
-    if not any(term in question["question"] for term in ("流量", "入口温度")):
+    question_text, question_topic = require_interview_question(question, "interview")
+    if not any(term in question_text for term in ("流量", "入口温度")):
         raise RuntimeError("interview did not ask the prioritized missing condition")
 
     _, answer_mapping = services.repository.register_source(
@@ -369,13 +382,18 @@ def full(services: Services, session_id: str) -> dict[str, Any]:
         case_label="事例1",
         external_key=f"live-answer-{uuid4()}",
         segments=[
-            (f"live-question-{uuid4()}", "assistant", question["question"]),
+            (f"live-question-{uuid4()}", "assistant", question_text),
             (f"live-answer-{uuid4()}", "operator", interview["prepared_answer"]),
         ],
     )
     answer_ids = list(answer_mapping.values())
     new_segments = [
-        {"segment_id": answer_ids[0], "text": question["question"], "speaker": "assistant"},
+        {
+            "segment_id": answer_ids[0],
+            "text": question_text,
+            "speaker": "assistant",
+            "topic": question_topic,
+        },
         {
             "segment_id": answer_ids[1],
             "text": interview["prepared_answer"],
@@ -675,6 +693,9 @@ def full_v5(services: Services, session_id: str) -> dict[str, Any]:
         mode="interview",
         payload={"draft": _v5_draft_payload(item), "statements": statements},
     )
+    first_question_text, first_question_topic = require_interview_question(
+        first_question, "interview_reason_question"
+    )
     _, reason_mapping = services.repository.register_source(
         workspace.id,
         title="聞き取り記録1（理由）",
@@ -683,7 +704,7 @@ def full_v5(services: Services, session_id: str) -> dict[str, Any]:
         case_label=item.case_label,
         external_key=f"live-v5-reason-{uuid4()}",
         segments=[
-            (f"live-v5-reason-q-{uuid4()}", "assistant", first_question["question"]),
+            (f"live-v5-reason-q-{uuid4()}", "assistant", first_question_text),
             (f"live-v5-reason-a-{uuid4()}", "operator", demo["interview"]["reason_reply"]),
         ],
     )
@@ -692,8 +713,9 @@ def full_v5(services: Services, session_id: str) -> dict[str, Any]:
         [
             {
                 "segment_id": reason_ids[0],
-                "text": first_question["question"],
+                "text": first_question_text,
                 "speaker": "assistant",
+                "topic": first_question_topic,
             },
             {
                 "segment_id": reason_ids[1],
@@ -710,6 +732,9 @@ def full_v5(services: Services, session_id: str) -> dict[str, Any]:
         mode="interview",
         payload={"draft": _v5_draft_payload(item), "statements": statements},
     )
+    second_question_text, second_question_topic = require_interview_question(
+        second_question, "interview_scope_question"
+    )
     _, scope_mapping = services.repository.register_source(
         workspace.id,
         title="聞き取り記録1（適用範囲）",
@@ -718,7 +743,7 @@ def full_v5(services: Services, session_id: str) -> dict[str, Any]:
         case_label=item.case_label,
         external_key=f"live-v5-scope-{uuid4()}",
         segments=[
-            (f"live-v5-scope-q-{uuid4()}", "assistant", second_question["question"]),
+            (f"live-v5-scope-q-{uuid4()}", "assistant", second_question_text),
             (f"live-v5-scope-a-{uuid4()}", "operator", demo["interview"]["scope_reply"]),
         ],
     )
@@ -727,8 +752,9 @@ def full_v5(services: Services, session_id: str) -> dict[str, Any]:
         [
             {
                 "segment_id": scope_ids[0],
-                "text": second_question["question"],
+                "text": second_question_text,
                 "speaker": "assistant",
+                "topic": second_question_topic,
             },
             {
                 "segment_id": scope_ids[1],

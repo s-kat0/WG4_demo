@@ -33,6 +33,8 @@ from wg4_demo.schemas import (
     AnswerSelection,
     CauseStatus,
     InterviewQuestion,
+    InterviewStatus,
+    InterviewTopic,
     KnowledgeDraft,
     OperationType,
     ProposalOperation,
@@ -109,7 +111,7 @@ class StructuredWorkflowService:
         draft: dict[str, Any],
         statements: list[dict[str, str]],
     ) -> InterviewQuestion:
-        return await self.gateway.structured(
+        result = await self.gateway.structured(
             context,
             instructions=self.prompts.read("interview"),
             input_text=json.dumps(
@@ -117,6 +119,43 @@ class StructuredWorkflowService:
             ),
             output_type=InterviewQuestion,
         )
+        self._validate_interview_result(result, statements)
+        return result
+
+    @staticmethod
+    def _validate_interview_result(
+        result: InterviewQuestion, statements: list[dict[str, str]]
+    ) -> None:
+        if result.status is InterviewStatus.COMPLETE:
+            return
+        if result.topic is None or result.question is None:
+            raise ValidationFailure(
+                "追加質問の形式を検証できません。",
+                code="interview_question_invalid",
+            )
+        prior_topics: set[InterviewTopic] = set()
+        prior_questions: set[str] = set()
+        for statement in statements:
+            if statement.get("speaker") != "assistant":
+                continue
+            question = statement.get("text")
+            if question:
+                prior_questions.add("".join(question.split()).rstrip("?？。"))
+            raw_topic = statement.get("topic")
+            if raw_topic:
+                try:
+                    prior_topics.add(InterviewTopic(raw_topic))
+                except ValueError as exc:
+                    raise ValidationFailure(
+                        "保存済みの聞き取りトピックを検証できません。",
+                        code="interview_topic_invalid",
+                    ) from exc
+        normalized = "".join(result.question.split()).rstrip("?？。")
+        if result.topic in prior_topics or normalized in prior_questions:
+            raise ValidationFailure(
+                "既に確認した内容と重複する追加質問だったため表示しません。",
+                code="interview_question_repeated",
+            )
 
     async def reflect_and_stage(
         self,

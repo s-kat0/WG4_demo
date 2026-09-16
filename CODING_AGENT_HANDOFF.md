@@ -3,8 +3,8 @@
 - 更新日: 2026-09-16
 - 対象: Python 3.12 / Streamlit / OpenAI Responses API・Agents SDK / SQLite
 - fixture: `wg4-practical-seed-v5`
-- prompt: `wg4-prompts-v13`
-- domain schema: `2` / 公開schema表記: `wg4-schema-v2`
+- QA・抽出等のprompt: `wg4-prompts-v13` / interview prompt: `wg4-interview-v2`
+- domain schema: `2` / 公開schema表記: `wg4-schema-v2` / interview出力: `wg4-interview-turn-v2`
 
 この文書は、別のコーディングエージェントが現行実装を安全に調査・変更するための入口。秘密値、runtime状態、実パスワードは記載しない。
 
@@ -152,6 +152,7 @@ job mode:
 - `管理`: 有限call枠の追加・停止
 
 各画面の展開説明は次の操作を示す。待機中、前件数、実行中、完了、失敗を区別し、再送を促さない。
+聞き取りでは、LLM生成の追加質問と固定収録の本人役回答例を明示的に区別する。`InterviewQuestion`はask/completeとtopicを返し、既出topic・同一質問は保存前に拒否する。固定回答例は理由用・適用範囲用を各一度だけ自動入力する。
 
 ## 10. 主要コード
 

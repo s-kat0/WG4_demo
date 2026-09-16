@@ -9,9 +9,16 @@ import streamlit as st
 
 from wg4_demo.errors import ValidationFailure
 from wg4_demo.repository import KnowledgeRecord
-from wg4_demo.schemas import KnowledgeDraft, OperationType, ProposalOperation
+from wg4_demo.schemas import (
+    InterviewQuestion,
+    InterviewStatus,
+    InterviewTopic,
+    KnowledgeDraft,
+    OperationType,
+    ProposalOperation,
+)
 from wg4_demo.services import Services
-from wg4_demo.ui.common import active_job_exists, enqueue, show_action_error
+from wg4_demo.ui.common import active_job_exists, enqueue, navigate_to, show_action_error
 
 
 def render(services: Services, project_root: Path) -> None:
@@ -136,8 +143,7 @@ def _render_document_step(
                     "この文書抽出の更新案は既に処理済みです。",
                     code="document_proposal_finalized",
                 )
-            st.session_state.nav_page = "更新案・実回答比較"
-            st.rerun()
+            navigate_to("更新案・実回答比較")
         except Exception as exc:
             show_action_error(exc)
 
@@ -176,6 +182,10 @@ def _render_interview_step(services: Services, demo: dict[str, Any], item: Knowl
     statements = st.session_state.setdefault("interview_statements", [])
     if not statements:
         with st.form("interview-opening-form"):
+            st.caption(
+                "入力済みの開始発言はアプリに固定収録した架空教材です。"
+                "LLMが生成した発言ではありません。"
+            )
             opening = st.text_area(
                 "本人役の開始発言",
                 value=demo["interview"]["opening"],
@@ -199,40 +209,70 @@ def _render_interview_step(services: Services, demo: dict[str, Any], item: Knowl
 
     interview_outcome = st.session_state.get("last_outcomes", {}).get("interview")
     if interview_outcome:
-        st.info(f"LLMの追加質問：{interview_outcome['question']}")
+        turn = _parse_interview_outcome(interview_outcome)
         answer_count = sum(
             1
             for statement in statements
             if statement["speaker"] == "operator" and statement is not statements[0]
         )
-        default_reply = (
-            demo["interview"]["reason_reply"]
-            if answer_count == 0
-            else demo["interview"]["scope_reply"]
-        )
-        with st.form(f"interview-reply-{answer_count}"):
-            answer = st.text_area(
-                "本人役の回答（質問に合うよう編集）",
-                value=default_reply,
-                max_chars=1500,
-                help="入力済み回答例は進行補助です。LLMの質問内容と合わない場合は編集してください。",
+        if turn.status is InterviewStatus.COMPLETE:
+            st.success(
+                "LLMは、発言済みの内容から追加すべき高価値な質問はないと判定しました。"
+                "下のボタンから、人が確認する補足案を作成できます。"
             )
-            reply = st.form_submit_button(
-                "回答して次の質問へ（APIを使用）",
-                disabled=active_job_exists(services),
-            )
-        if reply:
-            try:
-                exchange = _register_interview_exchange(
-                    services,
-                    str(interview_outcome["question"]),
-                    answer,
+        else:
+            if turn.question is None or turn.topic is None:
+                raise ValidationFailure(
+                    "追加質問の形式を検証できません。",
+                    code="interview_question_invalid",
                 )
-                statements.extend(exchange)
-                _enqueue_interview(services, item, statements)
-                st.rerun()
-            except Exception as exc:
-                show_action_error(exc)
+            st.info(f"LLMがAPIで生成した追加質問：{turn.question}")
+            asked_topics = _asked_interview_topics(statements)
+            default_reply = _fixed_interview_reply(demo, turn.topic, asked_topics)
+            if default_reply:
+                st.caption(
+                    "回答欄の初期値はアプリに固定収録した架空教材の回答例です。"
+                    "LLMが生成した回答ではありません。質問に合うよう編集してください。"
+                )
+            elif answer_count < 2:
+                st.caption(
+                    "この質問に対応する固定回答例はありません。回答する場合は手入力し、"
+                    "不要なら下の『補足案を作る』へ進んでください。"
+                )
+            else:
+                st.caption(
+                    "固定回答例の自動挿入は2回答で終了しました。追加で答える場合だけ手入力し、"
+                    "不要なら下の『補足案を作る』へ進んでください。"
+                )
+            with st.form(f"interview-reply-{answer_count}"):
+                answer = st.text_area(
+                    "本人役の回答",
+                    value=default_reply,
+                    max_chars=1500,
+                    placeholder="追加質問に回答する場合だけ入力してください。",
+                )
+                reply = st.form_submit_button(
+                    "回答して次の質問へ（APIを使用）",
+                    disabled=active_job_exists(services),
+                )
+            if reply:
+                try:
+                    if not answer.strip():
+                        raise ValidationFailure(
+                            "回答が空です。回答するか、補足案の作成へ進んでください。",
+                            code="interview_answer_empty",
+                        )
+                    exchange = _register_interview_exchange(
+                        services,
+                        turn.question,
+                        turn.topic.value,
+                        answer,
+                    )
+                    statements.extend(exchange)
+                    _enqueue_interview(services, item, statements)
+                    st.rerun()
+                except Exception as exc:
+                    show_action_error(exc)
 
     answer_count = max(
         0,
@@ -258,8 +298,7 @@ def _render_interview_step(services: Services, demo: dict[str, Any], item: Knowl
                 "allowed_segment_ids": allowed,
             },
         )
-        st.session_state.nav_page = "更新案・実回答比較"
-        st.rerun()
+        navigate_to("更新案・実回答比較")
 
 
 def _enqueue_interview(
@@ -308,7 +347,7 @@ def _register_interview_segment(
 
 
 def _register_interview_exchange(
-    services: Services, question: str, answer: str
+    services: Services, question: str, topic: str, answer: str
 ) -> list[dict[str, str]]:
     question_key = f"interview-question-{uuid4()}"
     answer_key = f"interview-answer-{uuid4()}"
@@ -325,9 +364,67 @@ def _register_interview_exchange(
         ],
     )
     return [
-        {"segment_id": mapping[question_key], "text": question, "speaker": "assistant"},
+        {
+            "segment_id": mapping[question_key],
+            "text": question,
+            "speaker": "assistant",
+            "topic": topic,
+        },
         {"segment_id": mapping[answer_key], "text": answer, "speaker": "operator"},
     ]
+
+
+def _parse_interview_outcome(payload: dict[str, Any]) -> InterviewQuestion:
+    if "status" in payload:
+        # Repository outcomes are restored from JSON, so strict enum fields arrive
+        # as strings. Validate through the JSON path instead of requiring callers
+        # to reconstruct enum instances in UI session state.
+        return InterviewQuestion.model_validate_json(json.dumps(payload, ensure_ascii=False))
+    question = payload.get("question")
+    related = payload.get("related_missing_field")
+    if not isinstance(question, str) or not question:
+        raise ValidationFailure(
+            "保存済みの追加質問を検証できません。",
+            code="interview_question_invalid",
+        )
+    if related is not None and not isinstance(related, str):
+        raise ValidationFailure(
+            "保存済みの不足項目を検証できません。",
+            code="interview_question_invalid",
+        )
+    return InterviewQuestion(
+        status=InterviewStatus.ASK,
+        topic=InterviewTopic.OTHER,
+        question=question,
+        related_missing_field=related,
+    )
+
+
+def _fixed_interview_reply(
+    demo: dict[str, Any], topic: InterviewTopic, asked_topics: set[InterviewTopic]
+) -> str:
+    if topic is InterviewTopic.DECISION_REASON and topic not in asked_topics:
+        return str(demo["interview"]["reason_reply"])
+    scope_topics = {InterviewTopic.APPLICABILITY, InterviewTopic.EXCEPTION}
+    if topic in scope_topics and not asked_topics.intersection(scope_topics):
+        return str(demo["interview"]["scope_reply"])
+    return ""
+
+
+def _asked_interview_topics(statements: list[dict[str, str]]) -> set[InterviewTopic]:
+    topics: set[InterviewTopic] = set()
+    for statement in statements:
+        raw_topic = statement.get("topic")
+        if statement.get("speaker") != "assistant" or raw_topic is None:
+            continue
+        try:
+            topics.add(InterviewTopic(raw_topic))
+        except ValueError as exc:
+            raise ValidationFailure(
+                "保存済みの聞き取りトピックを検証できません。",
+                code="interview_topic_invalid",
+            ) from exc
+    return topics
 
 
 def _enqueue_comparison(

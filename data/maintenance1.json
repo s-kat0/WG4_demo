@@ -5,9 +5,7 @@
   "case_label": "事例1",
   "kind": "document",
   "segments": [
-    {"key": "maintenance1-p1", "text": "冷却器1の出口温度の表示が上昇。"},
-    {"key": "maintenance1-p2", "text": "温度計の交換直後だった。"},
-    {"key": "maintenance1-p3", "text": "独立計器との照合を実施した。"},
-    {"key": "maintenance1-p4", "text": "原因は特定されていない。"}
+    {"key": "maintenance1-p1", "text": "冷却器1では、温度計を交換してから出口温度が高めに表示されるようになったため、念のため別の計器とも突き合わせた。"},
+    {"key": "maintenance1-p2", "text": "ただし、表示差の原因までは特定できていない。"}
   ]
 }

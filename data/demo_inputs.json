@@ -1,5 +1,5 @@
 {
-  "fixture_version": "wg4-demo-v2",
+  "fixture_version": "wg4-demo-v3",
   "main_question": "冷却器1の出口温度の表示が高い。温度計交換直後で、冷却水流量と入口温度は通常範囲。何を確認するか？",
   "update_statement": "照合用の計器も、校正が有効か確認する必要があります。",
   "test_only_equipment2": "冷却器2の点検記録では、入口側の指示値を確認した。",

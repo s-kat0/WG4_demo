@@ -1325,11 +1325,13 @@ class Repository:
             (workspace_id, source_id, utc_now().isoformat()),
         )
         texts = [
-            ("prepared-item3-p1", "冷却器1の出口温度の表示が上昇。"),
-            ("prepared-item3-p2", "温度計の交換直後だった。"),
-            ("prepared-item3-p3", "独立計器との照合を実施した。"),
-            ("prepared-item3-p4", "原因は特定されていない。"),
-            ("prepared-item3-p5", "冷却水の流量と入口温度は、どちらも通常の範囲でした。"),
+            (
+                "prepared-item3-p1",
+                "冷却器1では、温度計を交換してから出口温度が高めに表示されるように"
+                "なったため、念のため別の計器とも突き合わせた。",
+            ),
+            ("prepared-item3-p2", "ただし、表示差の原因までは特定できていない。"),
+            ("prepared-item3-p3", "冷却水の流量と入口温度は、どちらも通常の範囲でした。"),
         ]
         segment_map: dict[str, tuple[str, str]] = {}
         for ordinal, (key, text) in enumerate(texts, start=1):
@@ -1355,16 +1357,16 @@ class Repository:
                 FactKind.CONDITION,
                 "温度計の交換直後",
                 ConditionScope.CASE_CONTEXT,
-                "prepared-item3-p2",
+                "prepared-item3-p1",
             ),
-            (FactKind.CHECK_ACTION, "独立計器との照合", None, "prepared-item3-p3"),
+            (FactKind.CHECK_ACTION, "別計器との照合", None, "prepared-item3-p1"),
             (
                 FactKind.CONDITION,
                 "冷却水流量と入口温度は通常範囲",
                 ConditionScope.CASE_CONTEXT,
-                "prepared-item3-p5",
+                "prepared-item3-p3",
             ),
-            (FactKind.CAUSE_STATUS, "原因は未確定", None, "prepared-item3-p4"),
+            (FactKind.CAUSE_STATUS, "原因は未確定", None, "prepared-item3-p2"),
         ]
         facts: list[StoredFact] = []
         for kind, text, scope, key in fact_specs:

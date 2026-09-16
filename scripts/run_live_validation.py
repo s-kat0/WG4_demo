@@ -146,7 +146,7 @@ def run_job(
             "max_output_tokens": services.settings.max_output_tokens,
             "reasoning_effort": services.settings.openai_reasoning_effort,
         },
-        prompt_version="wg4-prompts-v10",
+        prompt_version="wg4-prompts-v12",
         schema_version="wg4-schema-v1",
         dedupe_key=str(uuid4()),
     )
@@ -204,9 +204,19 @@ def validate_draft(draft: dict[str, Any], segments: list[dict[str, str]]) -> Non
     source = {segment["segment_id"]: segment["text"] for segment in segments}
     if draft["cause_status"] != CauseStatus.UNRESOLVED.value:
         raise RuntimeError("extraction incorrectly resolved the cause")
+    required_kinds = {
+        FactKind.OBSERVATION.value,
+        FactKind.CONDITION.value,
+        FactKind.CHECK_ACTION.value,
+    }
+    actual_kinds = {fact["kind"] for fact in draft["facts"]}
+    if not required_kinds.issubset(actual_kinds):
+        raise RuntimeError("extraction omitted a required fact kind")
     for fact in draft["facts"]:
         if fact["kind"] == FactKind.CAUSE_HYPOTHESIS.value:
             raise RuntimeError("extraction invented a cause hypothesis")
+        if len(fact["text"]) > 30:
+            raise RuntimeError("extraction returned a fact longer than 30 characters")
         for evidence in fact["evidence"]:
             if evidence["segment_id"] not in source:
                 raise RuntimeError("extraction returned an unknown evidence id")
@@ -227,6 +237,33 @@ def usage_summary(control_db: Path) -> dict[str, int]:
         connection.close()
     assert row is not None
     return {"calls": int(row[0]), "input_tokens": int(row[1]), "output_tokens": int(row[2])}
+
+
+def extract_only(services: Services, session_id: str) -> dict[str, Any]:
+    workspace = services.repository.create_workspace(
+        session_id,
+        seed_mode="from_scratch",
+        seed_path=PROJECT_ROOT / "data/approved_seed.json",
+    )
+    conversation = services.repository.create_conversation(workspace.id)
+    segments, _, _ = register_fixture_sources(services, workspace.id)
+    extraction, extract_seconds = run_job(
+        services,
+        session_id=session_id,
+        workspace_id=workspace.id,
+        conversation_id=conversation,
+        mode="extract",
+        payload={"segments": segments},
+    )
+    validate_draft(extraction["draft"], segments)
+    return {
+        "extract_seconds": round(extract_seconds, 3),
+        "facts": [
+            {"kind": fact["kind"], "text": fact["text"]} for fact in extraction["draft"]["facts"]
+        ],
+        "cause_status": extraction["draft"]["cause_status"],
+        "usage": usage_summary(services.settings.control_db_path),
+    }
 
 
 def smoke(services: Services, session_id: str) -> dict[str, Any]:
@@ -455,7 +492,7 @@ def full(services: Services, session_id: str) -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["smoke", "full"], required=True)
+    parser.add_argument("--mode", choices=["extract", "smoke", "full"], required=True)
     parser.add_argument("--reasoning-effort", choices=["none", "low"], required=True)
     parser.add_argument("--call-budget", type=int, required=True)
     parser.add_argument("--confirmed-external-limit", action="store_true")
@@ -476,11 +513,12 @@ def main() -> int:
         services, participant_id = build_validation_services(settings)
         started = time.monotonic()
         try:
-            result = (
-                smoke(services, participant_id)
-                if args.mode == "smoke"
-                else full(services, participant_id)
-            )
+            if args.mode == "extract":
+                result = extract_only(services, participant_id)
+            elif args.mode == "smoke":
+                result = smoke(services, participant_id)
+            else:
+                result = full(services, participant_id)
         except AppError as exc:
             print(json.dumps({"status": "failed", "code": exc.code, "stage": exc.stage}))
             return 1

@@ -194,7 +194,7 @@ uv run --locked python scripts/run_load_test.py --sessions 30
 - timeout自動再送なし、fallbackなし、秘密非表示
 - 30 session、最大worker 3、session active 1、dedupe
 
-liveは`RUN_LIVE_TESTS=1`、実Secrets、有限台帳、外部上限確認がそろう場合だけ。v5のlive時間・call/token、Cloud、Cloud 30 sessionは、実施するまで未確認と報告する。
+liveは`RUN_LIVE_TESTS=1`、実Secrets、有限台帳、外部上限確認がそろう場合だけ。2026-09-17に`gpt-5.6-luna`・reasoning `medium`のv5 fullが1回成功（65.750秒、21 calls、入力79,193／出力4,217 tokens）。詳細は`docs/validation_report.md`。複数回の再現性、Cloud、Cloud 30 sessionは未確認と報告する。
 
 ## 12. 変更時チェックリスト
 

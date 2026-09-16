@@ -66,7 +66,7 @@ pytestのskip 1件は、`RUN_LIVE_TESTS=1`が明示されていない既存live 
 - 文書抽出、追加質問、本人役補足、Agent回答、更新案のLLM境界
 - API例外、timeout、不正structured output、SDK tool例外の伝播
 - 30 session共有キュー。fake handlerの遅延を使用し、外部APIは0 call
-- v5 A/B/C保存と比較。実回答本文の品質・所要時間・token量は未測定
+- v5 A/B/Cの異常系、未承認遮断、失敗snapshot保存
 
 ## 実API
 
@@ -82,13 +82,26 @@ pytestのskip 1件は、`RUN_LIVE_TESTS=1`が明示されていない既存live 
 
 `medium`での次の新規実行は、文書抽出・v1承認・比較Aまでは進み、最初の追加質問が「理由」「なぜ」「考え」の語を含まなかったためliveスクリプトの固定語判定で停止した。使用量は6 calls、入力14,965 tokens、出力1,145 tokens、21.532秒。質問内容のschema違反や根拠違反ではなかった。この表層語判定は、二往復程度を目安とし質問順序・文言を固定しないv5仕様と矛盾するため削除した。代わりに、補足承認後のv2が本人回答を根拠とする`decision_reason`と`applicability`または`exception`を実際に保持することを検証する。併せて、A/B/Cを実画面から起動する経路にも明示選択マーカーを追加した。修正後の実API A/B/C通過は未確認。
 
+上記修正後、同じ`gpt-5.6-luna`、reasoning `medium`、最大30 call、同時実行1、SDK retry 0で新規のv5 full検証を実施し、成功した。所要65.750秒、21 calls、入力79,193 tokens、出力4,217 tokens。初期12件に動的対象1件を加えた13件を保持し、対象は文書版v1、本人役補足版v2、校正条件版v3へ更新された。A/B/C snapshotはすべて保存され、各回答で`search_knowledge`、`get_context`、`read_evidence`を実行した。
+
+| 段階 | 秒 |
+|---|---:|
+| 文書抽出 | 6.488 |
+| 回答A | 15.174 |
+| 理由の追加質問 | 2.742 |
+| 適用範囲の追加質問 | 1.962 |
+| 本人役補足案 | 7.321 |
+| 回答B | 9.791 |
+| 校正条件の更新案 | 11.271 |
+| 回答C | 10.709 |
+
 過去にprompt v12・旧v3フローで`gpt-5.6-luna`、reasoning `low`のローカル実API検証が成功しているが、その47.5秒・20 calls等をv5の実績へ流用しない。
 
 ## Cloud・実画面
 
 Streamlit Community Cloudへのpush、deploy、Cloud Secrets、公開URL、Cloud実API、Cloud 30 sessionは未実施。
 
-スライド用のv5成功画面は、次の実行をまだ終えていないため成功例として作成していない。
+v5 fullの実API処理は成功したが、スライド用の実ブラウザ画面はまだ撮影していない。
 
 - 文書抽出結果
 - 本人役との対話差分
@@ -103,5 +116,5 @@ Streamlit Community Cloudへのpush、deploy、Cloud Secrets、公開URL、Cloud
 - 決定的検索はbigramと小規模語彙規則であり、意味検索ではない
 - 会話の仮定・訂正・設備切替は明示語に基づく。曖昧な発言は確認が必要
 - SQLite単一プロセス前提で、Cloud再起動をまたぐ完遂・永続性・複数replicaを保証しない
-- v5実APIで、LLMが追加理由・適用範囲・校正条件を毎回正しく取得して候補へ含めるかは未確認
+- v5 full実APIは1回成功したが、複数回の再現性、Cloud環境、約30人の実API同時利用は未確認
 - AppTest・mock成功をCloud公開成功、実API品質、実務上の安全性として扱わない

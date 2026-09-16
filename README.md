@@ -141,4 +141,4 @@ runtime/                     実行時DB（Git管理外）
 - 会話状態の分類は明示語を使う決定的規則で、曖昧な表現は対象確認が必要
 - Structured Outputsは形式を制約するが、内容の正しさは人の原文レビューが必要
 - 初期12件と追加事例は架空教材で、実務上の安全性・工学的妥当性の証拠ではない
-- v5の実API所要時間、call/token、Cloud実ブラウザ、Cloud 30-session負荷は別途検証するまで未確認
+- v5 fullのローカル実APIは`gpt-5.6-luna`・reasoning `medium`で1回成功（65.750秒、21 calls、入力79,193／出力4,217 tokens）。複数回の再現性、Cloud実ブラウザ、Cloud 30-session実API負荷は未確認

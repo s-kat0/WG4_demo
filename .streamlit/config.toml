@@ -1,0 +1,14 @@
+[client]
+showErrorDetails = "none"
+toolbarMode = "minimal"
+
+[server]
+enableXsrfProtection = true
+enableCORS = true
+enableStaticServing = false
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"

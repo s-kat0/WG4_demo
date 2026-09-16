@@ -1,0 +1,53 @@
+{
+  "fixture_version": "wg4-demo-v2",
+  "approved_sources": [
+    {
+      "key": "procedure1",
+      "title": "手順書1",
+      "equipment": "冷却器1",
+      "kind": "document",
+      "segments": [
+        {"key": "procedure1-p1", "text": "冷却器1の出口温度の表示が通常より高い場合は、冷却水の流量と入口温度の記録を確認する。"},
+        {"key": "procedure1-p2", "text": "これらの記録だけで原因を確定しない。"}
+      ]
+    },
+    {
+      "key": "maintenance2",
+      "title": "保全記録2",
+      "equipment": "冷却器1",
+      "kind": "document",
+      "segments": [
+        {"key": "maintenance2-p1", "text": "事例2では、冷却器1の出口温度の表示上昇と冷却水流量の表示低下が同時に記録された。"},
+        {"key": "maintenance2-p2", "text": "担当者は冷却水流量計の表示と同時刻の運転記録を照合した。"},
+        {"key": "maintenance2-p3", "text": "この記録には、原因の特定結果と対応後の結果は記載されていない。"}
+      ]
+    }
+  ],
+  "seed_cards": [
+    {
+      "display_name": "知識項目1",
+      "equipment": "冷却器1",
+      "case_label": null,
+      "action": "冷却水の流量と入口温度の記録を確認する",
+      "action_evidence": ["procedure1-p1"],
+      "case_conditions": [
+        {"text": "出口温度の表示が通常より高い", "evidence": ["procedure1-p1"]}
+      ],
+      "cause_status": "unresolved",
+      "cause_status_evidence": ["procedure1-p2"]
+    },
+    {
+      "display_name": "知識項目2",
+      "equipment": "冷却器1",
+      "case_label": "事例2",
+      "action": "冷却水流量計の表示と同時刻の運転記録を照合する",
+      "action_evidence": ["maintenance2-p2"],
+      "case_conditions": [
+        {"text": "出口温度の表示上昇", "evidence": ["maintenance2-p1"]},
+        {"text": "冷却水流量の表示低下", "evidence": ["maintenance2-p1"]}
+      ],
+      "cause_status": "unresolved",
+      "cause_status_evidence": ["maintenance2-p3"]
+    }
+  ]
+}

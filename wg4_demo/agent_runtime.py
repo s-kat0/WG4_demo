@@ -1,0 +1,262 @@
+"""Single-agent workflows and fixed structured-output LLM workflows."""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Callable
+from datetime import datetime
+from pathlib import Path
+from typing import Any, cast
+
+from agents import (
+    Agent,
+    ModelRetrySettings,
+    ModelSettings,
+    RunConfig,
+    Runner,
+    set_tracing_disabled,
+)
+from agents.tool import Tool
+
+from wg4_demo.errors import ValidationFailure
+from wg4_demo.evidence import EvidenceService
+from wg4_demo.graph import GraphService
+from wg4_demo.llm_gateway import GatewayCallContext, LLMGateway
+from wg4_demo.repository import ProposalRecord, Repository
+from wg4_demo.result_validation import ResultValidator
+from wg4_demo.retrieval import RetrievalService
+from wg4_demo.schemas import (
+    AnswerSelection,
+    CauseStatus,
+    InterviewQuestion,
+    KnowledgeDraft,
+    OperationType,
+    ProposalOperation,
+    ProposalSelection,
+)
+from wg4_demo.settings import Settings
+from wg4_demo.tools import ALL_TOOLS, QA_TOOLS, ToolRuntimeContext
+
+set_tracing_disabled(True)
+
+
+class PromptStore:
+    def __init__(self, prompt_dir: Path) -> None:
+        self.prompt_dir = prompt_dir
+
+    def read(self, name: str) -> str:
+        return (self.prompt_dir / f"{name}.md").read_text(encoding="utf-8")
+
+
+class StructuredWorkflowService:
+    def __init__(
+        self,
+        gateway: LLMGateway,
+        repository: Repository,
+        prompts: PromptStore,
+    ) -> None:
+        self.gateway = gateway
+        self.repository = repository
+        self.prompts = prompts
+
+    async def extract(
+        self,
+        context: GatewayCallContext,
+        *,
+        segments: list[dict[str, str]],
+    ) -> KnowledgeDraft:
+        return await self.gateway.structured(
+            context,
+            instructions=self.prompts.read("extraction"),
+            input_text=json.dumps({"segments": segments}, ensure_ascii=False),
+            output_type=KnowledgeDraft,
+        )
+
+    async def interview(
+        self,
+        context: GatewayCallContext,
+        *,
+        draft: dict[str, Any],
+        statements: list[dict[str, str]],
+    ) -> InterviewQuestion:
+        return await self.gateway.structured(
+            context,
+            instructions=self.prompts.read("interview"),
+            input_text=json.dumps(
+                {"current_draft": draft, "statements": statements}, ensure_ascii=False
+            ),
+            output_type=InterviewQuestion,
+        )
+
+    async def reflect_and_stage(
+        self,
+        context: GatewayCallContext,
+        *,
+        workspace_id: str,
+        segments: list[dict[str, str]],
+        allowed_segment_ids: set[str],
+        equipment: str,
+        case_label: str | None,
+    ) -> ProposalRecord:
+        draft = await self.gateway.structured(
+            context,
+            instructions=self.prompts.read("extraction"),
+            input_text=json.dumps({"segments": segments}, ensure_ascii=False),
+            output_type=KnowledgeDraft,
+        )
+        operations = [
+            ProposalOperation(operation=OperationType.ADD_FACT, new_fact=fact)
+            for fact in draft.facts
+        ]
+        return self.repository.stage_proposal(
+            workspace_id,
+            action_id=context.action_id,
+            target_item_id=None,
+            base_version=0,
+            operations=operations,
+            reason="文書と模擬聞き取りの内容を確認済み知識候補として整理",
+            equipment=equipment,
+            case_label=case_label,
+            missing_fields=draft.missing_fields,
+            cause_status=CauseStatus(draft.cause_status),
+            allowed_segment_ids=allowed_segment_ids,
+        )
+
+
+class AgentService:
+    def __init__(
+        self,
+        settings: Settings,
+        gateway: LLMGateway,
+        repository: Repository,
+        retrieval: RetrievalService,
+        graph: GraphService,
+        evidence: EvidenceService,
+        validator: ResultValidator,
+        prompts: PromptStore,
+    ) -> None:
+        self.settings = settings
+        self.gateway = gateway
+        self.repository = repository
+        self.retrieval = retrieval
+        self.graph = graph
+        self.evidence = evidence
+        self.validator = validator
+        self.prompts = prompts
+
+    async def answer(
+        self,
+        call_context: GatewayCallContext,
+        tool_context: ToolRuntimeContext,
+        question: str,
+    ) -> tuple[AnswerSelection, ToolRuntimeContext]:
+        client = self.gateway.create_client()
+        try:
+            agent = Agent[ToolRuntimeContext](
+                name="WG4 knowledge evidence agent",
+                instructions=self.prompts.read("answer"),
+                tools=cast(list[Tool], QA_TOOLS),
+                model=self.gateway.budgeted_agent_model(call_context, client),
+                model_settings=self._model_settings(),
+                output_type=AnswerSelection,
+            )
+            result = await Runner.run(
+                agent,
+                question,
+                context=tool_context,
+                max_turns=self.settings.max_model_calls_per_action,
+                run_config=self._run_config(),
+            )
+            answer = (
+                result.final_output
+                if isinstance(result.final_output, AnswerSelection)
+                else AnswerSelection.model_validate(result.final_output)
+            )
+            return self.validator.validate_answer(
+                tool_context.workspace_id, answer, tool_context.trace
+            ), tool_context
+        finally:
+            await client.close()
+
+    async def propose_update(
+        self,
+        call_context: GatewayCallContext,
+        tool_context: ToolRuntimeContext,
+        statement: str,
+    ) -> tuple[ProposalRecord, ToolRuntimeContext]:
+        client = self.gateway.create_client()
+        try:
+            agent = Agent[ToolRuntimeContext](
+                name="WG4 knowledge update agent",
+                instructions=self.prompts.read("update"),
+                tools=cast(list[Tool], ALL_TOOLS),
+                model=self.gateway.budgeted_agent_model(call_context, client),
+                model_settings=self._model_settings(),
+                output_type=ProposalSelection,
+            )
+            result = await Runner.run(
+                agent,
+                statement,
+                context=tool_context,
+                max_turns=self.settings.max_model_calls_per_action,
+                run_config=self._run_config(),
+            )
+            selection = (
+                result.final_output
+                if isinstance(result.final_output, ProposalSelection)
+                else ProposalSelection.model_validate(result.final_output)
+            )
+            if (
+                tool_context.staged_proposal_id is None
+                or selection.proposal_id != tool_context.staged_proposal_id
+            ):
+                raise ValidationFailure("検証済みのstaged proposalと出力が一致しません。")
+            return self.repository.get_proposal(
+                tool_context.workspace_id, selection.proposal_id
+            ), tool_context
+        finally:
+            await client.close()
+
+    def new_tool_context(
+        self,
+        *,
+        session_id: str,
+        workspace_id: str,
+        action_id: str,
+        mode: str,
+        kb_revision: int,
+        deadline: datetime,
+        submitted_segment_ids: set[str] | None = None,
+        is_active: Callable[[], bool] = lambda: True,
+    ) -> ToolRuntimeContext:
+        return ToolRuntimeContext(
+            session_id=session_id,
+            workspace_id=workspace_id,
+            action_id=action_id,
+            mode=mode,
+            kb_revision=kb_revision,
+            deadline=deadline,
+            repository=self.repository,
+            retrieval=self.retrieval,
+            graph=self.graph,
+            evidence=self.evidence,
+            max_tool_calls=self.settings.max_tool_calls_per_action,
+            submitted_segment_ids=submitted_segment_ids or set(),
+            is_active=is_active,
+        )
+
+    def _model_settings(self) -> ModelSettings:
+        return ModelSettings(
+            parallel_tool_calls=False,
+            max_tokens=self.settings.max_output_tokens,
+            store=False,
+            retry=ModelRetrySettings(max_retries=0),
+            timeout=float(self.settings.request_timeout_seconds),
+        )
+
+    def _run_config(self) -> RunConfig:
+        return RunConfig(
+            tracing_disabled=True,
+            trace_include_sensitive_data=False,
+            tool_not_found_behavior="raise_error",
+        )

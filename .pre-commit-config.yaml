@@ -1,0 +1,18 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run --locked ruff check .
+        language: system
+        pass_filenames: false
+      - id: ruff-format-check
+        name: ruff format check
+        entry: uv run --locked ruff format --check .
+        language: system
+        pass_filenames: false
+      - id: repository-safety
+        name: repository safety
+        entry: uv run --locked python scripts/check_repository_safety.py
+        language: system
+        pass_filenames: false

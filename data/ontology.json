@@ -1,0 +1,12 @@
+{
+  "version": "wg4-ontology-v1",
+  "node_types": ["Equipment", "Case", "KnowledgeItem", "Fact", "Source", "SourceSegment"],
+  "relations": [
+    ["KnowledgeItem", "about_equipment", "Equipment"],
+    ["KnowledgeItem", "about_case", "Case"],
+    ["KnowledgeItem", "has_fact", "Fact"],
+    ["Fact", "supported_by", "SourceSegment"],
+    ["SourceSegment", "part_of", "Source"],
+    ["Fact", "prerequisite_for", "Fact"]
+  ]
+}

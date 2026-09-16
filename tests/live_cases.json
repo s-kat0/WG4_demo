@@ -1,0 +1,5 @@
+{
+  "version": "wg4-live-cases-v3",
+  "required_repetitions": 3,
+  "cases": ["LIVE-01", "LIVE-02", "LIVE-03", "LIVE-07", "LIVE-08"]
+}

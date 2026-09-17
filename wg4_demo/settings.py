@@ -27,6 +27,7 @@ class Settings(BaseModel):
     auth_version: str | None = None
     demo_expires_at: datetime | None = None
     app_llm_enabled: bool = False
+    call_budget_mode: Literal["finite", "provider_hard_limit"] = "provider_hard_limit"
     app_max_llm_calls: int = Field(default=600, ge=1)
     session_max_llm_calls: int = Field(default=40, ge=1)
     max_model_calls_per_action: int = Field(default=6, ge=1, le=20)
@@ -141,6 +142,7 @@ def settings_from_mapping(
         "auth_version": raw("AUTH_VERSION"),
         "demo_expires_at": raw("DEMO_EXPIRES_AT"),
         "app_llm_enabled": raw("APP_LLM_ENABLED") or "false",
+        "call_budget_mode": raw("CALL_BUDGET_MODE") or "provider_hard_limit",
         "global_tpm": _optional_int(raw("GLOBAL_TPM")),
     }
     integer_defaults = {

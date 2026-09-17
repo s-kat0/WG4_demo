@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Literal, cast
 
 import streamlit as st
 
 from wg4_demo.repository import KnowledgeRecord
 from wg4_demo.services import Services
-from wg4_demo.ui.common import active_job_exists, show_action_error
+from wg4_demo.ui.common import active_job_exists, navigate_to, show_action_error
 
 SOURCE_LABELS: dict[str, Literal["document", "interview", "mixed"] | None] = {
     "すべて": None,
@@ -17,7 +16,7 @@ SOURCE_LABELS: dict[str, Literal["document", "interview", "mixed"] | None] = {
 }
 
 
-def render(services: Services, project_root: Path) -> None:
+def render(services: Services) -> None:
     st.header("1. 知識を探す")
     st.caption("承認済み知識だけを対象にした非課金の通常検索です。画面表示ではAPIを呼びません。")
     try:
@@ -64,7 +63,7 @@ def render(services: Services, project_root: Path) -> None:
             )
             _render_hit(services, item, score=float(hit["score"]))
 
-        with st.expander("承認済み知識の保存・領域の初期化"):
+        with st.expander("承認済み知識を保存"):
             export_bytes = services.exporter.export_json(
                 session_id=st.session_state.session_id,
                 workspace_id=workspace_id,
@@ -75,36 +74,6 @@ def render(services: Services, project_root: Path) -> None:
                 file_name="wg4-approved-knowledge.json",
                 mime="application/json",
             )
-            confirmed = st.checkbox(
-                "自分の知識・出典・提案・会話が削除され、利用回数は戻らないことを確認"
-            )
-            if st.button(
-                "この領域を初期状態へ戻す",
-                disabled=not confirmed or active_job_exists(services),
-            ):
-                workspace = services.repository.require_workspace(
-                    st.session_state.session_id, workspace_id
-                )
-                seed_path = (
-                    project_root / "data" / "knowledge_seed_v5.json"
-                    if workspace.seed_mode == "practical_v5"
-                    else (
-                        project_root / "data" / "approved_seed.json"
-                        if workspace.seed_mode == "approved_v1"
-                        else None
-                    )
-                )
-                _, conversation = services.repository.reset_workspace(
-                    st.session_state.session_id,
-                    workspace_id,
-                    seed_mode=workspace.seed_mode,
-                    seed_path=seed_path,
-                )
-                st.session_state.conversation_id = conversation
-                st.session_state.last_outcomes = {}
-                st.session_state.last_outcome_action_ids = {}
-                st.session_state.pop("search_result", None)
-                st.rerun()
     except Exception as exc:
         st.session_state.pop("search_result", None)
         show_action_error(exc)
@@ -142,5 +111,4 @@ def _render_hit(services: Services, item: KnowledgeRecord, *, score: float) -> N
         ):
             st.session_state.consult_knowledge_id = item.id
             st.session_state.consult_question = f"{item.title}について、何を確認すべきですか。"
-            st.session_state.nav_page = "エージェントに相談する"
-            st.rerun()
+            navigate_to("エージェントに相談する")

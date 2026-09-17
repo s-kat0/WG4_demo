@@ -82,7 +82,11 @@ def test_applicable_top_search_hit_must_be_first_candidate(
         for fact in item.facts
         if fact.kind is FactKind.CONDITION
         and fact.condition_scope
-        in {ConditionScope.CASE_CONTEXT, ConditionScope.ACTION_PREREQUISITE}
+        in {
+            ConditionScope.CASE_CONTEXT,
+            ConditionScope.APPLICABILITY,
+            ConditionScope.ACTION_PREREQUISITE,
+        }
     ]
     evidence_ids = list(
         dict.fromkeys(
@@ -116,6 +120,15 @@ def test_applicable_top_search_hit_must_be_first_candidate(
     with pytest.raises(ValidationFailure) as exc_info:
         ResultValidator(repository).validate_answer(workspace.id, answer, trace)
     assert exc_info.value.code == "validation_top_candidate_missing"
+
+    validated = ResultValidator(repository).validate_answer(
+        workspace.id,
+        answer,
+        trace,
+        focus_knowledge_ids={item.id},
+        explicit_focus=True,
+    )
+    assert validated.candidates[0].knowledge_id == item.id
 
 
 def test_reason_followup_uses_focus_without_forcing_search_rank_one(

@@ -29,6 +29,7 @@ class ResultValidator:
         *,
         expected_intent: str = "candidate_search",
         focus_knowledge_ids: set[str] | None = None,
+        explicit_focus: bool = False,
     ) -> AnswerSelection:
         if answer.intent != expected_intent:
             raise ValidationFailure(
@@ -49,10 +50,23 @@ class ResultValidator:
             return answer
         if answer.status == "candidates" and not answer.candidates:
             raise ValidationFailure(code="validation_candidate_missing")
+        focus = focus_knowledge_ids or set()
+        if (
+            answer.status == "candidates"
+            and expected_intent == "candidate_search"
+            and explicit_focus
+            and focus
+            and answer.candidates[0].knowledge_id not in focus
+        ):
+            raise ValidationFailure(
+                "明示的に選択された知識項目と回答対象が一致しません。",
+                code="validation_focus_candidate_missing",
+            )
         if (
             answer.status == "candidates"
             and trace.search_result.hits
             and expected_intent == "candidate_search"
+            and not (explicit_focus and focus)
         ):
             top_hit = trace.search_result.hits[0]
             top_item = self.repository.get_knowledge(
@@ -71,7 +85,6 @@ class ResultValidator:
                     "適用可能な検索1位の最新版が第1候補に含まれていません。",
                     code="validation_top_candidate_missing",
                 )
-        focus = focus_knowledge_ids or set()
         if (
             answer.status == "candidates"
             and expected_intent in {"reason_explanation", "evidence_lookup"}

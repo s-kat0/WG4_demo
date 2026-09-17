@@ -72,3 +72,16 @@ class ConversationService:
         )
         self.repository.save_conversation_state(workspace_id, conversation_id, state)
         return state
+
+    def payload_for_turn(
+        self,
+        state: ConversationState,
+        *,
+        explicit_selected_knowledge_id: str | None = None,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = state.model_dump(mode="json")
+        if explicit_selected_knowledge_id is not None:
+            if explicit_selected_knowledge_id not in state.focus_knowledge_ids:
+                raise ValueError("explicit selection must match the prepared conversation focus")
+            payload["explicit_selected_knowledge_id"] = explicit_selected_knowledge_id
+        return payload

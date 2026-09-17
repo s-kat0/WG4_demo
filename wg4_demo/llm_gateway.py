@@ -1,4 +1,4 @@
-"""The only path to OpenAI: fixed model, finite ledger, no automatic retries."""
+"""The only path to OpenAI: fixed model, audited ledger, no automatic retries."""
 
 from __future__ import annotations
 

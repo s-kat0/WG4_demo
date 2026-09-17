@@ -15,7 +15,6 @@ from wg4_demo.schemas import (
     FactDraft,
     FactKind,
     KnowledgeDraft,
-    Role,
     SessionRecord,
 )
 from wg4_demo.settings import Settings
@@ -59,13 +58,6 @@ def enabled_ledger(
     settings: Settings, auth: AuthService, participant: SessionRecord
 ) -> UsageLedger:
     ledger = UsageLedger(settings.control_db_path, settings, auth)
-    admin = auth.login("admin-secret", role=Role.ADMIN, client_token="gateway-admin")
-    ledger.enable_budget(
-        admin.id,
-        additional_calls=10,
-        confirmed_external_limit=True,
-        reason="gateway tests",
-    )
     return ledger
 
 
@@ -81,6 +73,14 @@ def draft() -> KnowledgeDraft:
         cause_status=CauseStatus.UNRESOLVED,
         missing_fields=["原因"],
     )
+
+
+def test_knowledge_draft_accepts_its_strict_json_round_trip() -> None:
+    expected = draft()
+
+    actual = KnowledgeDraft.model_validate_json(expected.model_dump_json())
+
+    assert actual == expected
 
 
 @pytest.mark.asyncio

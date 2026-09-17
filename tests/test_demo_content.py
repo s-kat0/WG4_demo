@@ -34,3 +34,13 @@ def test_extraction_prompt_requires_concise_grounded_fact_text() -> None:
     assert "kindがcondition以外のfactではcondition_scopeをnull" in prompt
     assert "parent_action_fact_idはすべてnull" in prompt
     assert "原文の該当引用" in prompt
+    assert "異なるkindを一つのfactへまとめない" in prompt
+    assert "observation、condition、check_actionの別factとして漏れなく" in prompt
+
+
+def test_interview_prompt_supports_completion_and_forbids_repeated_topics() -> None:
+    prompt = (PROJECT_ROOT / "prompts" / "interview.md").read_text("utf-8")
+
+    assert "すでに使ったtopic" in prompt
+    assert "statusをcomplete" in prompt
+    assert "質問を続けるためだけの言い換え" in prompt

@@ -84,9 +84,36 @@ class KnowledgeDraft(StrictModel):
     missing_fields: list[Annotated[str, Field(min_length=1, max_length=100)]] = Field(max_length=12)
 
 
+class InterviewStatus(StrEnum):
+    ASK = "ask"
+    COMPLETE = "complete"
+
+
+class InterviewTopic(StrEnum):
+    DECISION_REASON = "decision_reason"
+    APPLICABILITY = "applicability"
+    EXCEPTION = "exception"
+    OTHER = "other"
+
+
 class InterviewQuestion(StrictModel):
-    question: str = Field(min_length=1, max_length=300)
-    related_missing_field: str | None = Field(default=None, max_length=100)
+    status: InterviewStatus
+    topic: InterviewTopic | None
+    question: Annotated[str, Field(min_length=1, max_length=300)] | None
+    related_missing_field: Annotated[str, Field(min_length=1, max_length=100)] | None
+
+    @model_validator(mode="after")
+    def validate_status_shape(self) -> InterviewQuestion:
+        if self.status is InterviewStatus.ASK:
+            if self.topic is None or self.question is None:
+                raise ValueError("ask requires topic and question")
+        elif (
+            self.topic is not None
+            or self.question is not None
+            or self.related_missing_field is not None
+        ):
+            raise ValueError("complete requires null topic, question, and related field")
+        return self
 
 
 class StoredFact(StrictModel):

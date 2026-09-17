@@ -40,7 +40,10 @@ async def live_check() -> None:
     auth = AuthService(settings.control_db_path, settings)
     ledger = UsageLedger(settings.control_db_path, settings, auth)
     if not ledger.status()["enabled"]:
-        raise RuntimeError("usage ledger is disabled; an administrator must enable a finite budget")
+        raise RuntimeError(
+            "usage ledger is disabled; an administrator must confirm the external hard limit "
+            "and resume LLM requests"
+        )
     session = auth.login(
         getpass("Participant password for gated live check: "),
         role=Role.PARTICIPANT,

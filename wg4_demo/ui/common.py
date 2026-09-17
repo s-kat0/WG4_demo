@@ -11,6 +11,34 @@ from wg4_demo.safe_display import safe_error
 from wg4_demo.schemas import JobState
 from wg4_demo.services import Services
 
+PAGES = (
+    "知識を探す",
+    "エージェントに相談する",
+    "知識を追加・補足する",
+    "更新案・実回答比較",
+)
+ADMIN_PAGE = "管理"
+_REQUESTED_PAGE_KEY = "_requested_nav_page"
+
+
+def apply_navigation_request() -> None:
+    """Apply a deferred page change before the navigation widget is created."""
+    requested = st.session_state.pop(_REQUESTED_PAGE_KEY, None)
+    if requested is None:
+        return
+    if requested not in PAGES:
+        raise ValueError("invalid navigation request")
+    st.session_state.nav_page = requested
+    st.session_state.operator_view = False
+
+
+def navigate_to(page: str) -> None:
+    """Request a page change without mutating an instantiated widget key."""
+    if page not in PAGES:
+        raise ValueError("invalid navigation destination")
+    st.session_state[_REQUESTED_PAGE_KEY] = page
+    st.rerun()
+
 
 def new_dedupe_key() -> str:
     return secrets.token_urlsafe(18)
@@ -45,8 +73,8 @@ def enqueue(services: Services, *, mode: str, payload: dict[str, Any]) -> JobRec
             "max_output_tokens": services.settings.max_output_tokens,
             "reasoning_effort": services.settings.openai_reasoning_effort,
         },
-        prompt_version="wg4-prompts-v13",
-        schema_version="wg4-schema-v2",
+        prompt_version="wg4-interview-v2" if mode == "interview" else "wg4-prompts-v13",
+        schema_version="wg4-interview-turn-v2" if mode == "interview" else "wg4-schema-v2",
         dedupe_key=new_dedupe_key(),
     )
     st.session_state.active_job_id = job.job_id

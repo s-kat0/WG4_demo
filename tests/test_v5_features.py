@@ -221,6 +221,29 @@ def test_conversation_keeps_hypothesis_separate_and_clears_on_equipment_switch(
     assert switched.hypothetical_context == []
 
 
+def test_explicit_selection_marker_is_scoped_to_the_prepared_turn(
+    repository: Repository,
+    participant: SessionRecord,
+    project_root: Path,
+) -> None:
+    workspace_id = create_v5_workspace(repository, participant, project_root)
+    conversation_id = repository.create_conversation(workspace_id)
+    selected = repository.list_knowledge(workspace_id)[0]
+    service = ConversationService(repository)
+    state = service.prepare_turn(
+        workspace_id,
+        conversation_id,
+        "この知識について確認候補を教えてください。",
+        selected_knowledge_id=selected.id,
+    )
+
+    explicit = service.payload_for_turn(state, explicit_selected_knowledge_id=selected.id)
+    ordinary = service.payload_for_turn(state)
+
+    assert explicit["explicit_selected_knowledge_id"] == selected.id
+    assert "explicit_selected_knowledge_id" not in ordinary
+
+
 def test_ambiguous_pronoun_is_marked_before_api_call(
     repository: Repository, participant: SessionRecord, project_root: Path
 ) -> None:

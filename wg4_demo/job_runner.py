@@ -74,6 +74,8 @@ class ApplicationJobRunner:
             consultation = self._object_dict(job.payload.get("consultation", {}))
             intent = str(consultation.get("last_intent", "candidate_search"))
             focus_ids = set(self._string_list(consultation.get("focus_knowledge_ids", [])))
+            explicit_selected = consultation.get("explicit_selected_knowledge_id")
+            explicit_focus = isinstance(explicit_selected, str) and explicit_selected in focus_ids
             tool_context = self.agents.new_tool_context(
                 session_id=job.session_id,
                 workspace_id=job.workspace_id,
@@ -83,6 +85,7 @@ class ApplicationJobRunner:
                 deadline=job.run_deadline_at,
                 answer_intent=intent,
                 focus_knowledge_ids=focus_ids,
+                explicit_focus=explicit_focus,
                 is_active=lambda: self.jobs.heartbeat(job),
             )
             answer, completed_context = await self.agents.answer(

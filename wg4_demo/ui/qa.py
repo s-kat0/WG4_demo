@@ -67,6 +67,12 @@ def render(services: Services, project_root: Path) -> None:
                     "知識名・設備名を質問に含めてください。APIには送信していません。"
                 )
             else:
+                consultation = services.conversations.payload_for_turn(
+                    state,
+                    explicit_selected_knowledge_id=(
+                        selected_id if isinstance(selected_id, str) else None
+                    ),
+                )
                 services.repository.append_message(
                     st.session_state.workspace_id,
                     st.session_state.conversation_id,
@@ -78,7 +84,7 @@ def render(services: Services, project_root: Path) -> None:
                     mode="qa",
                     payload={
                         "question": question,
-                        "consultation": state.model_dump(mode="json"),
+                        "consultation": consultation,
                     },
                 )
                 st.session_state.pop("consult_knowledge_id", None)

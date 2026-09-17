@@ -1,10 +1,10 @@
 # WG4講演デモ v5 現行実装ハンドオフ
 
-- 更新日: 2026-09-16
+- 更新日: 2026-09-17
 - 対象: Python 3.12 / Streamlit / OpenAI Responses API・Agents SDK / SQLite
 - fixture: `wg4-practical-seed-v5`
-- prompt: `wg4-prompts-v13`
-- domain schema: `2` / 公開schema表記: `wg4-schema-v2`
+- QA・抽出等のprompt: `wg4-prompts-v13` / interview prompt: `wg4-interview-v2`
+- domain schema: `2` / 公開schema表記: `wg4-schema-v2` / interview出力: `wg4-interview-turn-v2`
 
 この文書は、別のコーディングエージェントが現行実装を安全に調査・変更するための入口。秘密値、runtime状態、実パスワードは記載しない。
 
@@ -26,9 +26,10 @@
 - 旧schema v1からv2への追加型migration。旧`from_scratch` / `approved_v1` workspaceへv5 seedを自動追加しない
 - 承認済み現行版だけの通常検索。設備・由来filter、原文、版、実件数をAPIなしで表示
 - 会話状態に設備、実際の条件、仮定条件、直前候補、質問意図を分離
-- 候補相談、理由説明、原文確認、条件比較。検索1位強制は候補相談だけ
+- 候補相談、理由説明、原文確認、条件比較。通常の候補相談は検索1位を優先し、「この知識について相談する」の明示選択ターンだけ選択項目を優先
 - 文書版A、本人役補足版B、校正条件版Cの実回答snapshotと設定比較
 - 主画面を「知識を探す」「エージェントに相談する」「知識を追加・補足する」「更新案・実回答比較」へ整理
+- Cloud参加者ログインは`practical_v5`へ一本化。旧開始モードと領域初期化はUIから外し、管理画面は折りたたんだ運営者用入口へ分離
 
 既存の認証、workspace分離、Approval、版管理、Gateway、利用台帳、FIFOキュー、取消、timeout、遅着破棄、fallback禁止は再設計せず維持している。
 
@@ -145,13 +146,16 @@ job mode:
 
 ## 9. UI入口
 
+- 参加者ログイン: 共通パスワードだけを入力し、新規`practical_v5` workspaceを作る。開始モード選択は表示しない
 - `知識を探す`: 非課金、初期12件から利用可
 - `エージェントに相談する`: 初期12件から利用可、追質問可
 - `知識を追加・補足する`: 文書→A→聞き取り補足
 - `更新案・実回答比較`: pending承認、B/C実行、A/B/Cの根拠差
-- `管理`: 有限call枠の追加・停止
+- `運営者用`: 主ナビゲーション外の折りたたみ入口。別パスワードで利用回数の監視・停止を行い、`finite`互換モードでは有限call枠を追加
 
 各画面の展開説明は次の操作を示す。待機中、前件数、実行中、完了、失敗を区別し、再送を促さない。
+聞き取りでは、LLM生成の追加質問と固定収録の本人役回答例を明示的に区別する。`InterviewQuestion`はask/completeとtopicを返し、既出topic・同一質問は保存前に拒否する。固定回答例は理由用・適用範囲用を各一度だけ自動入力する。
+JSON保存とログアウトは維持するが、参加者による領域初期化は表示しない。`from_scratch` / `approved_v1`の作成・初期化処理は旧workspaceと回帰試験の内部互換性として残し、新規Cloud利用の導線には使わない。
 
 ## 10. 主要コード
 
@@ -163,12 +167,12 @@ job mode:
 | `wg4_demo/conversation.py` | actual/hypothetical/focus/intentの状態遷移 |
 | `wg4_demo/graph.py` | 現行承認版のNetworkX traversal |
 | `wg4_demo/evidence.py` | 承認済み原文の取得境界 |
-| `wg4_demo/llm_gateway.py` | OpenAI唯一の境界、retryなし、有限台帳 |
+| `wg4_demo/llm_gateway.py` | OpenAI唯一の境界、retryなし、利用監査台帳 |
 | `wg4_demo/agent_runtime.py` | structured workflow、Agents SDK |
 | `wg4_demo/tools.py` | search/get_context/read_evidence/propose_update |
 | `wg4_demo/result_validation.py` | intent、順位、focus、fact、evidence検証 |
 | `wg4_demo/jobs.py` / `scheduler.py` | FIFO、重複、owner、取消、timeout、worker制限 |
-| `wg4_demo/ui/` | 5つの参加者・管理画面 |
+| `wg4_demo/ui/` | 4つの参加者画面と、分離した運営者用画面 |
 
 ## 11. 検証
 
@@ -194,7 +198,7 @@ uv run --locked python scripts/run_load_test.py --sessions 30
 - timeout自動再送なし、fallbackなし、秘密非表示
 - 30 session、最大worker 3、session active 1、dedupe
 
-liveは`RUN_LIVE_TESTS=1`、実Secrets、有限台帳、外部上限確認がそろう場合だけ。v5のlive時間・call/token、Cloud、Cloud 30 sessionは、実施するまで未確認と報告する。
+liveは`RUN_LIVE_TESTS=1`、実Secrets、有限台帳、外部上限確認がそろう場合だけ。2026-09-17に現行コードで`gpt-5.6-luna`・reasoning `medium`のv5 fullが1回成功（67.889秒、21 calls、入力78,677／出力4,048 tokens）。詳細は`docs/validation_report.md`。同一revisionでの複数回再現性、Cloud、Cloud 30 sessionは未確認と報告する。
 
 ## 12. 変更時チェックリスト
 

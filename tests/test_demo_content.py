@@ -29,6 +29,8 @@ def test_extraction_prompt_requires_concise_grounded_fact_text() -> None:
 
     assert "原文をそのまま分割・転記せず" in prompt
     assert "原則30文字以内" in prompt
+    assert "missing_fieldsへ明示" in prompt
+    assert "decision_reason、exception、cause_hypothesisは出力せず" in prompt
     assert "未確定の内容を確定表現に変えたりしてはいけません" in prompt
     assert "kindがconditionのfactにはcondition_scopeを必ず設定" in prompt
     assert "kindがcondition以外のfactではcondition_scopeをnull" in prompt

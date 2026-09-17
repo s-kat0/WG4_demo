@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from wg4_demo.agent_runtime import PromptStore, StructuredWorkflowService
+from wg4_demo.errors import ValidationFailure
 from wg4_demo.llm_gateway import GatewayCallContext
 from wg4_demo.repository import Repository
 from wg4_demo.schemas import (
@@ -28,6 +29,103 @@ class MockStructuredGateway:
     async def structured(self, context: GatewayCallContext, **kwargs: Any) -> KnowledgeDraft:
         self.calls.append({"context": context, **kwargs})
         return self.result
+
+
+def extraction_draft(segment_id: str, *, missing_fields: list[str]) -> KnowledgeDraft:
+    return KnowledgeDraft(
+        facts=[
+            FactDraft(
+                kind=FactKind.CHECK_ACTION,
+                text="別の計器と照合",
+                evidence=[EvidenceDraft(segment_id=segment_id, quote="別の計器とも突き合わせた")],
+            )
+        ],
+        cause_status=CauseStatus.UNRESOLVED,
+        missing_fields=missing_fields,
+    )
+
+
+@pytest.mark.asyncio
+async def test_extraction_rejects_unreported_missing_information(project_root: Path) -> None:
+    gateway = MockStructuredGateway(extraction_draft("segment-1", missing_fields=[]))
+    service = StructuredWorkflowService(
+        gateway,  # type: ignore[arg-type]
+        None,  # type: ignore[arg-type]
+        PromptStore(project_root / "prompts"),
+    )
+
+    with pytest.raises(ValidationFailure) as caught:
+        await service.extract(
+            GatewayCallContext(
+                "session-1",
+                "extract-invalid-missing-fields",
+                datetime.now(UTC) + timedelta(seconds=30),
+            ),
+            segments=[{"segment_id": "segment-1", "text": "別の計器とも突き合わせた"}],
+        )
+
+    assert caught.value.code == "extraction_missing_fields_invalid"
+    assert gateway.calls and len(gateway.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_extraction_accepts_explicit_missing_information(project_root: Path) -> None:
+    expected = extraction_draft("segment-1", missing_fields=["原因", "判断理由", "適用範囲"])
+    gateway = MockStructuredGateway(expected)
+    service = StructuredWorkflowService(
+        gateway,  # type: ignore[arg-type]
+        None,  # type: ignore[arg-type]
+        PromptStore(project_root / "prompts"),
+    )
+
+    actual = await service.extract(
+        GatewayCallContext(
+            "session-1",
+            "extract-valid-missing-fields",
+            datetime.now(UTC) + timedelta(seconds=30),
+        ),
+        segments=[{"segment_id": "segment-1", "text": "別の計器とも突き合わせた"}],
+    )
+
+    assert actual == expected
+
+
+@pytest.mark.asyncio
+async def test_extraction_rejects_decision_reason_fact(project_root: Path) -> None:
+    invalid = KnowledgeDraft(
+        facts=[
+            FactDraft(
+                kind=FactKind.CHECK_ACTION,
+                text="別の計器と照合",
+                evidence=[EvidenceDraft(segment_id="segment-1", quote="突き合わせた")],
+            ),
+            FactDraft(
+                kind=FactKind.DECISION_REASON,
+                text="念のため確認",
+                evidence=[EvidenceDraft(segment_id="segment-1", quote="念のため")],
+            ),
+        ],
+        cause_status=CauseStatus.UNRESOLVED,
+        missing_fields=["原因", "適用範囲"],
+    )
+    gateway = MockStructuredGateway(invalid)
+    service = StructuredWorkflowService(
+        gateway,  # type: ignore[arg-type]
+        None,  # type: ignore[arg-type]
+        PromptStore(project_root / "prompts"),
+    )
+
+    with pytest.raises(ValidationFailure) as caught:
+        await service.extract(
+            GatewayCallContext(
+                "session-1",
+                "extract-invalid-kind",
+                datetime.now(UTC) + timedelta(seconds=30),
+            ),
+            segments=[{"segment_id": "segment-1", "text": "念のため突き合わせた"}],
+        )
+
+    assert caught.value.code == "extraction_fact_kind_invalid"
 
 
 @pytest.mark.asyncio

@@ -803,7 +803,8 @@ class Repository:
         try:
             rows = connection.execute(
                 """
-                SELECT ki.*, kv.facts_json, kv.missing_fields_json, kv.cause_status
+                SELECT ki.*, kv.version AS selected_version,
+                       kv.facts_json, kv.missing_fields_json, kv.cause_status
                 FROM knowledge_items ki JOIN knowledge_versions kv
                   ON kv.workspace_id = ki.workspace_id AND kv.item_id = ki.id
                  AND kv.version = ki.active_version
@@ -829,7 +830,8 @@ class Repository:
             requested = item["active_version"] if version is None else version
             row = connection.execute(
                 """
-                SELECT ki.*, kv.facts_json, kv.missing_fields_json, kv.cause_status
+                SELECT ki.*, kv.version AS selected_version,
+                       kv.facts_json, kv.missing_fields_json, kv.cause_status
                 FROM knowledge_items ki JOIN knowledge_versions kv
                   ON kv.workspace_id = ki.workspace_id AND kv.item_id = ki.id
                 WHERE ki.workspace_id = ? AND ki.id = ? AND kv.version = ?
@@ -2280,7 +2282,7 @@ class Repository:
             tags=json.loads(row["tags_json"]),
             registration_origin=row["registration_origin"],
             origin_label=row["display_origin_label"],
-            version=row["active_version"],
+            version=row["selected_version"],
             facts=facts,
             missing_fields=json.loads(row["missing_fields_json"]),
             cause_status=CauseStatus(row["cause_status"]),

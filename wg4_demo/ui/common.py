@@ -73,7 +73,7 @@ def enqueue(services: Services, *, mode: str, payload: dict[str, Any]) -> JobRec
             "max_output_tokens": services.settings.max_output_tokens,
             "reasoning_effort": services.settings.openai_reasoning_effort,
         },
-        prompt_version="wg4-interview-v2" if mode == "interview" else "wg4-prompts-v13",
+        prompt_version="wg4-interview-v2" if mode == "interview" else "wg4-prompts-v14",
         schema_version="wg4-interview-turn-v2" if mode == "interview" else "wg4-schema-v2",
         dedupe_key=new_dedupe_key(),
     )

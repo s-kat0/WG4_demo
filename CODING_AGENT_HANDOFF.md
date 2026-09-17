@@ -3,7 +3,7 @@
 - 更新日: 2026-09-17
 - 対象: Python 3.12 / Streamlit / OpenAI Responses API・Agents SDK / SQLite
 - fixture: `wg4-practical-seed-v5`
-- QA・抽出等のprompt: `wg4-prompts-v13` / interview prompt: `wg4-interview-v2`
+- QA・抽出等のprompt: `wg4-prompts-v14` / interview prompt: `wg4-interview-v2`
 - domain schema: `2` / 公開schema表記: `wg4-schema-v2` / interview出力: `wg4-interview-turn-v2`
 
 この文書は、別のコーディングエージェントが現行実装を安全に調査・変更するための入口。秘密値、runtime状態、実パスワードは記載しない。

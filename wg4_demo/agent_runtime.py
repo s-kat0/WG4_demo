@@ -32,6 +32,8 @@ from wg4_demo.retrieval import RetrievalService
 from wg4_demo.schemas import (
     AnswerSelection,
     CauseStatus,
+    ConditionScope,
+    FactKind,
     InterviewQuestion,
     InterviewStatus,
     InterviewTopic,
@@ -97,12 +99,58 @@ class StructuredWorkflowService:
         *,
         segments: list[dict[str, str]],
     ) -> KnowledgeDraft:
-        return await self.gateway.structured(
+        draft = await self.gateway.structured(
             context,
             instructions=self.prompts.read("extraction"),
             input_text=json.dumps({"segments": segments}, ensure_ascii=False),
             output_type=KnowledgeDraft,
         )
+        self._validate_extraction_result(draft)
+        return draft
+
+    @staticmethod
+    def _validate_extraction_result(draft: KnowledgeDraft) -> None:
+        """Reject semantically incomplete extraction output without repairing it."""
+
+        allowed_kinds = {
+            FactKind.OBSERVATION,
+            FactKind.CHECK_ACTION,
+            FactKind.CONDITION,
+            FactKind.CAUSE_STATUS,
+        }
+        if any(fact.kind not in allowed_kinds for fact in draft.facts):
+            raise ValidationFailure(
+                "文書抽出で許可されていないfact種別が含まれるため使用しません。",
+                code="extraction_fact_kind_invalid",
+            )
+        if any(
+            fact.kind is FactKind.CONDITION
+            and fact.condition_scope not in {ConditionScope.CASE_CONTEXT, ConditionScope.EXCLUSION}
+            for fact in draft.facts
+        ):
+            raise ValidationFailure(
+                "文書抽出の条件種別を検証できないため使用しません。",
+                code="extraction_condition_scope_invalid",
+            )
+
+        missing = "\n".join(draft.missing_fields)
+        absent_categories: list[str] = []
+        if draft.cause_status is not CauseStatus.CONFIRMED_IN_SOURCE and "原因" not in missing:
+            absent_categories.append("原因")
+
+        has_check_action = any(fact.kind is FactKind.CHECK_ACTION for fact in draft.facts)
+        if has_check_action:
+            if not any(term in missing for term in ("判断理由", "理由")):
+                absent_categories.append("判断理由")
+
+            if not any(term in missing for term in ("適用範囲", "一般化", "例外")):
+                absent_categories.append("適用範囲")
+
+        if absent_categories:
+            raise ValidationFailure(
+                "抽出結果が原文にない情報の不足を明示していないため使用しません。",
+                code="extraction_missing_fields_invalid",
+            )
 
     async def interview(
         self,
@@ -167,12 +215,7 @@ class StructuredWorkflowService:
         equipment: str,
         case_label: str | None,
     ) -> ProposalRecord:
-        draft = await self.gateway.structured(
-            context,
-            instructions=self.prompts.read("extraction"),
-            input_text=json.dumps({"segments": segments}, ensure_ascii=False),
-            output_type=KnowledgeDraft,
-        )
+        draft = await self.extract(context, segments=segments)
         operations = [
             ProposalOperation(operation=OperationType.ADD_FACT, new_fact=fact)
             for fact in draft.facts

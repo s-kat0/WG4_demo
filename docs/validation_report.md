@@ -104,7 +104,17 @@ pytestのskip 1件は、`RUN_LIVE_TESTS=1`が明示されていない既存live 
 
 ## Cloud・実画面
 
-Streamlit Community Cloudへのdeploy、Cloud Secrets、公開URL、Cloud実API、Cloud 30 sessionは未実施。
+Streamlit Community Cloudの公開URL `https://wg4-demo-kato.streamlit.app/`へdeployし、Cloud Secrets設定後の参加者ログイン成功は運営者が確認した。初回の「現行知識を調べて相談する」は`agent_turn_limit`で失敗し、代替回答は表示されなかった。
+
+原因は、`parallel_tool_calls=False`で検索、複数候補のグラフ、原文を直列取得する一方、一操作のmodel call上限が6、tool call上限が8で、正常経路の最終回答前にmodel turnが尽き得る不整合だった。model call予算を12へ変更し、同じ引数のツール反復を禁止して、必要な原文IDの一括取得と根拠取得後の終了をpromptに明記した。tool call上限8、timeout、RPM/TPM、SDK retry 0、provider hard limitは維持した。
+
+修正後、公開画面と同じ初期12件と既定質問を使い、`gpt-5.6-luna`、reasoning `medium`で新規の実API検証を1回実施した。15.249秒、4 calls、入力13,179 tokens、出力523 tokensで成功し、`search_knowledge`→`get_context`→`read_evidence`後に候補1件を返した。別モデル、自動再送、固定回答は使用していない。Cloudへの修正反映後の再確認とCloud 30 session実機試験は未実施。
+
+その後の新規実API確認は、7 calls、入力42,230 tokens、出力660 tokensの後、8回目の送信前検査で`prompt_too_large`となり停止した。自動再送は行っていない。Cloudでも運営者が同エラーを確認した。原因は、モデルのcontext windowではなく、アプリ固有の推定入力上限16,000 tokensと64,000 bytesが、複数候補の直列ツール結果を累積する正常経路に対して小さすぎたことだった。入力上限を65,536 tokensと262,144 bytesへ変更し、モデルへ返す検索候補を最大3件へ制限し、グラフnodeの原文label重複を除去した。提示候補は原則1件、比較でも最大2件とした。
+
+上記修正後の同一revisionで、初期12件と既定質問の実API検証を独立に2回実施し、両方成功した。どちらも4 callsで`search_knowledge`→`get_context`→`read_evidence`を実行し、候補1件を返した。1回目は9.595秒、入力10,003 tokens、出力452 tokens、2回目は10.131秒、入力9,976 tokens、出力491 tokens。別モデル、自動再送、固定回答は使用していない。Cloud Secretsとdeploy revisionへの反映後の実画面再確認は未実施。
+
+さらに同じrevision、`gpt-5.6-luna`、reasoning `medium`、最大30 callsの明示的なlive gateでv5 fullを再実行し、73.091秒、21 calls、入力62,136 tokens、出力4,128 tokensで成功した。文書抽出、A回答、理由と適用範囲の聞き取り、補足承認、B回答、フィードバック、C回答まで完了し、A/B/Cはいずれも`search_knowledge`→`get_context`→`read_evidence`を実行した。最終版はv3、知識件数は13、比較記録はA/B/Cを保持した。別モデル、自動再送、固定回答は使用していない。
 
 v5 fullの実API処理は成功したが、スライド用の実ブラウザ画面はまだ撮影していない。
 

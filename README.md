@@ -61,7 +61,7 @@ uv run --locked python scripts/create_password_hash.py
 2. APIキー、モデル、reasoning、期限、確認済みTPMが設定済み
 3. 専用OpenAI projectで強制停止型のhard limitが設定済み
 
-推奨するアプリ側初期値は`GLOBAL_RPM=60`、`GLOBAL_TPM=200000`、`MAX_CONCURRENT_LLM=3`、`MAX_CONCURRENT_JOBS=3`、`MAX_PENDING_JOBS=30`。実際のproject Dashboard上限を当日確認し、それ以下へ設定する。
+推奨するアプリ側初期値は`GLOBAL_RPM=60`、`GLOBAL_TPM=200000`、`MAX_CONCURRENT_LLM=3`、`MAX_CONCURRENT_JOBS=3`、`MAX_PENDING_JOBS=30`、`MAX_MODEL_CALLS_PER_ACTION=12`、`MAX_TOOL_CALLS_PER_ACTION=8`、`MAX_PROMPT_BYTES=262144`、`MAX_ESTIMATED_INPUT_TOKENS=65536`。実際のproject Dashboard上限を当日確認し、それ以下へ設定する。model call上限は、直列の検索・グラフ・原文ツール呼出し後に最終構造化出力を返す余地を含む。入力上限は選定モデルのcontext windowと実測を確認し、ツール定義・累積ツール結果を含めて設定する。ツール8回、timeout、RPM/TPM、provider hard limitは別に適用される。
 
 `provider_hard_limit`では初回起動から有効で、全体・session別のcall数では停止しない。台帳は利用回数とtoken、失敗、unknownを監査用に記録する。管理者停止とprovider上限エラー時の停止、操作別上限、共有キュー、同時実行、RPM/TPMは維持する。timeout・接続断は課金状態不明として記録し、自動再送しない。従来の有限枠を使う場合だけ`CALL_BUDGET_MODE=finite`へ変更し、管理画面で枠を追加する。
 

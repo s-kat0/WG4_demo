@@ -118,6 +118,7 @@ class ApplicationJobRunner:
             return "answer", payload
         if job.mode == "update":
             submitted_ids = set(self._string_list(job.payload["submitted_segment_ids"]))
+            target_knowledge_id = str(job.payload["target_knowledge_id"])
             tool_context = self.agents.new_tool_context(
                 session_id=job.session_id,
                 workspace_id=job.workspace_id,
@@ -126,12 +127,13 @@ class ApplicationJobRunner:
                 kb_revision=job.kb_revision,
                 deadline=job.run_deadline_at,
                 submitted_segment_ids=submitted_ids,
+                focus_knowledge_ids={target_knowledge_id},
                 is_active=lambda: self.jobs.heartbeat(job),
             )
             model_input = {
                 "statement": str(job.payload["statement"]),
                 "submitted_segment_ids": sorted(submitted_ids),
-                "target_knowledge_id": str(job.payload["target_knowledge_id"]),
+                "target_knowledge_id": target_knowledge_id,
                 "target_version": int(job.payload["target_version"]),
                 "equipment": str(job.payload["equipment"]),
             }

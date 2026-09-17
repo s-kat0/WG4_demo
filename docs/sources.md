@@ -1,6 +1,7 @@
 # 実装時に確認した一次資料
 
 - OpenAI Responses API: <https://developers.openai.com/api/reference/python/resources/responses/methods/create>
+- OpenAI GPT-5.6 Luna model limits: <https://developers.openai.com/api/docs/models/gpt-5.6-luna>
 - OpenAI Agents API reference: <https://developers.openai.com/api/reference/python/resources/beta/subresources/agents/methods/create>
 - Structured Outputs: <https://developers.openai.com/api/docs/guides/structured-outputs>
 - Streamlit Community Cloud dependencies: <https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app/app-dependencies>

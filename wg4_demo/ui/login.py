@@ -31,6 +31,8 @@ def render_login(services: Services, project_root: Path) -> None:
             seed_path=project_root / "data" / "knowledge_seed_v5.json",
         )
         conversation = services.repository.create_conversation(workspace.id)
+        # Do not carry widget values or workspace-scoped display state across logins.
+        st.session_state.clear()
         st.session_state.session_id = session.id
         st.session_state.workspace_id = workspace.id
         st.session_state.conversation_id = conversation

@@ -31,8 +31,8 @@
 | `uv run --locked ruff format --check .` | 成功（78 files already formatted） |
 | `uv run --locked mypy wg4_demo scripts` | 成功（39 source files） |
 | `uv run --locked pip-audit` | 既知脆弱性0件 |
-| `uv run --locked python scripts/check_repository_safety.py` | 成功（122 tracked or addable files） |
-| `uv run --locked python scripts/run_load_test.py --sessions 30` | 30完了、0失敗、最大同時3、median 1.2747秒、p95 1.6446秒、外部API 0 |
+| `uv run --locked python scripts/check_repository_safety.py` | 成功（96 tracked or addable files） |
+| `uv run --locked python scripts/run_load_test.py --sessions 30` | 30完了、0失敗、最大同時3、median 1.2045秒、p95 1.5614秒、外部API 0 |
 | `uv run --locked pytest --cov=wg4_demo --cov-report=term-missing:skip-covered` | 72 passed、1 skipped、総合74% |
 
 pytestのskip 1件は、`RUN_LIVE_TESTS=1`が明示されていない既存live gate。通常テストは外部APIを呼んでいない。
@@ -54,6 +54,7 @@ pytestのskip 1件は、`RUN_LIVE_TESTS=1`が明示されていない既存live 
 - AppTestで未認証面、v5ログイン、非課金検索、画面遷移、pendingレビューを確認
 - Cloud参加者UIに旧デモ互換・空の領域・領域初期化がなく、ログイン後は初期12件の`practical_v5`になること
 - 主ナビゲーションが四画面だけで、運営者用画面が折りたたみ入口と別パスワードに分離されること
+- ログイン成功時と無効セッション検出時に旧workspaceの検索・聞き取り・管理画面状態を破棄し、管理者パスワードフォームを送信後クリアすること
 - 30のv5 workspaceが各12件を持ち、knowledge IDが相互に重ならず、最大worker 3を超えないこと
 - API timeoutの自動再送なし、structured output不正の自動修復なし、重複jobの二重受付なし
 - `APP_LLM_ENABLED=false`では、台帳に枠があってもAPI予約を作らない実行時gate

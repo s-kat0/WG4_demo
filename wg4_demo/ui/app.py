@@ -51,8 +51,9 @@ def main() -> None:
         services.auth.require_session(session_id, role=Role.PARTICIPANT)
         workspace = services.repository.require_workspace(session_id, st.session_state.workspace_id)
     except Exception:
-        for key in ["session_id", "workspace_id", "conversation_id", "active_job_id"]:
-            st.session_state.pop(key, None)
+        # Workspace-scoped search, interview, proposal, and admin state must not
+        # survive into the next authenticated session in the same browser tab.
+        st.session_state.clear()
         st.error("セッションが無効です。再ログインしてください。")
         st.stop()
     with st.sidebar:

@@ -149,7 +149,7 @@ job mode:
 - `エージェントに相談する`: 初期12件から利用可、追質問可
 - `知識を追加・補足する`: 文書→A→聞き取り補足
 - `更新案・実回答比較`: pending承認、B/C実行、A/B/Cの根拠差
-- `管理`: 有限call枠の追加・停止
+- `管理`: 利用回数の監視・停止。`finite`互換モードでは有限call枠の追加
 
 各画面の展開説明は次の操作を示す。待機中、前件数、実行中、完了、失敗を区別し、再送を促さない。
 聞き取りでは、LLM生成の追加質問と固定収録の本人役回答例を明示的に区別する。`InterviewQuestion`はask/completeとtopicを返し、既出topic・同一質問は保存前に拒否する。固定回答例は理由用・適用範囲用を各一度だけ自動入力する。
@@ -164,7 +164,7 @@ job mode:
 | `wg4_demo/conversation.py` | actual/hypothetical/focus/intentの状態遷移 |
 | `wg4_demo/graph.py` | 現行承認版のNetworkX traversal |
 | `wg4_demo/evidence.py` | 承認済み原文の取得境界 |
-| `wg4_demo/llm_gateway.py` | OpenAI唯一の境界、retryなし、有限台帳 |
+| `wg4_demo/llm_gateway.py` | OpenAI唯一の境界、retryなし、利用監査台帳 |
 | `wg4_demo/agent_runtime.py` | structured workflow、Agents SDK |
 | `wg4_demo/tools.py` | search/get_context/read_evidence/propose_update |
 | `wg4_demo/result_validation.py` | intent、順位、focus、fact、evidence検証 |

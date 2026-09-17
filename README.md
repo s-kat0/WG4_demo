@@ -12,7 +12,7 @@
 - 現状、仮定の別条件、訂正、設備切替、直前候補を分けた会話状態
 - 文書だけの版A、本人役の理由・適用範囲を補った版B、校正条件を補った版Cの実回答記録
 - workspaceごとに分離したSQLiteの原文、知識版、Proposal、Approval、会話、比較snapshot
-- 参加者／管理者のArgon2id認証、有限利用台帳、共有FIFOキュー、同時実行3、待機30、1セッション1件
+- 参加者／管理者のArgon2id認証、API利用監査台帳、共有FIFOキュー、同時実行3、待機30、1セッション1件
 - API、検索、検証、保存の失敗を固定回答、別モデル、前回回答、正常0件へ置換しないエラー契約
 
 ## ローカル起動
@@ -40,8 +40,9 @@ uv run --locked --env-file .env streamlit run app.py
 - `DEMO_PASSWORD_HASH` / `ADMIN_PASSWORD_HASH`: 別々のArgon2idハッシュ
 - `DEMO_EXPIRES_AT`: timezone付きISO 8601
 - `APP_LLM_ENABLED`: 実送信を許すときだけ`true`
+- `CALL_BUDGET_MODE`: 通常は`provider_hard_limit`。OpenAI projectのhard limitを費用上限にする
 - `GLOBAL_RPM` / `GLOBAL_TPM`: OpenAI projectで確認した上限以下
-- `APP_MAX_LLM_CALLS` / `SESSION_MAX_LLM_CALLS`: 全体・sessionの有限call上限
+- `APP_MAX_LLM_CALLS` / `SESSION_MAX_LLM_CALLS`: `CALL_BUDGET_MODE=finite`の場合だけ使う互換設定
 
 ### パスワードハッシュ
 
@@ -53,16 +54,15 @@ uv run --locked python scripts/create_password_hash.py
 
 ## 実LLMの有効化と利用上限
 
-実API送信には次の全条件が必要。
+標準の`CALL_BUDGET_MODE=provider_hard_limit`で実APIを送信するには、次の条件が必要。
 
 1. `APP_LLM_ENABLED=true`
 2. APIキー、モデル、reasoning、期限、確認済みTPMが設定済み
-3. 管理者が専用OpenAI projectの外部支出上限を確認済み
-4. 管理画面で有限call枠を明示的に追加済み
+3. 専用OpenAI projectで強制停止型のhard limitが設定済み
 
 推奨するアプリ側初期値は`GLOBAL_RPM=60`、`GLOBAL_TPM=200000`、`MAX_CONCURRENT_LLM=3`、`MAX_CONCURRENT_JOBS=3`、`MAX_PENDING_JOBS=30`。実際のproject Dashboard上限を当日確認し、それ以下へ設定する。
 
-台帳は初回、消失、認証世代変更時に停止・割当0から始まる。workspaceや会話を初期化しても利用済みcallは戻らない。timeout・接続断は課金状態不明として枠を戻さず、自動再送しない。
+`provider_hard_limit`では初回起動から有効で、全体・session別のcall数では停止しない。台帳は利用回数とtoken、失敗、unknownを監査用に記録する。管理者停止とprovider上限エラー時の停止、操作別上限、共有キュー、同時実行、RPM/TPMは維持する。timeout・接続断は課金状態不明として記録し、自動再送しない。従来の有限枠を使う場合だけ`CALL_BUDGET_MODE=finite`へ変更し、管理画面で枠を追加する。
 
 ## 講演用操作
 
@@ -91,7 +91,7 @@ API障害時は処理を停止する。録画や静止画を使う場合、講�
 3. `.streamlit/secrets.example.toml`と同じキーをCloud Secretsへ実値で登録する
 4. `APP_ENV="cloud"`を設定する
 5. 専用OpenAI projectのモデル利用可否、レート、強制停止型支出上限を確認する
-6. 起動後、管理画面で有限call枠を有効化する
+6. 管理画面で`budget_mode=provider_hard_limit`と利用回数を確認する
 7. 未認証、2ブラウザ分離、主シナリオ、1→5→10→30 sessionの段階試験を行う
 
 GitHub remote、Cloud URL、Cloud Secrets、公開操作はこの実装作業では設定しない。仮URLを稼働URLとして記載しない。
@@ -104,7 +104,7 @@ GitHub remote、Cloud URL、Cloud Secrets、公開操作はこの実装作業で
 - structured output、根拠ID、版の不整合: 検証失敗。部分採用・自動JSON修復なし
 - 待機列満杯、期限切れ: 受付拒否または`expired`。未送信ならAPI枠を消費しない
 - 取消後の遅着: 回答やpending案を公開しない
-- DB、台帳消失: seedや満額へ黙って復元せず停止
+- DB消失: 知識を成功扱いで復元しない。監査台帳消失時は過去回数を復元できないと扱い、費用停止はOpenAI側hard limitに委ねる
 - A/B/C記録なし・失敗: 「比較用の実行記録なし」または失敗コードを表示し、模範文で埋めない
 
 ## 非課金テスト

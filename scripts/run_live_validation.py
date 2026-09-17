@@ -81,6 +81,7 @@ def live_settings(
             "auth_version": f"live-validation-{uuid4()}",
             "demo_expires_at": datetime.now(UTC) + timedelta(hours=1),
             "app_llm_enabled": True,
+            "call_budget_mode": "finite",
             "app_max_llm_calls": call_budget,
             "session_max_llm_calls": call_budget,
             "max_model_calls_per_action": 6,

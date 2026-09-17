@@ -121,7 +121,7 @@ A/B/Cはquestion原文とhash、workspace、conversation、action/answer ID、em
 |---|---|---|
 | 未認証訪問者 | 講演名・注意事項・パスワード入力を見る | LLM呼出し、知識閲覧・変更、エクスポート |
 | 認証済み参加者 | 自分の練習用領域で抽出・質問・提案・承認・初期化・エクスポート | 他人の領域へのアクセス、全体上限変更、API設定変更 |
-| 管理者（講演者） | 別の管理者パスワードで全体停止・有限枠の有効化・利用集計を操作 | APIキーや参加者パスワードを画面に再表示すること |
+| 管理者（講演者） | 別の管理者パスワードで全体停止・再開・利用集計を操作 | APIキーや参加者パスワードを画面に再表示すること |
 | LLMエージェント | 許可された検索・原文参照・更新案作成ツールを選ぶ | 自分で承認すること、正式知識・認証・利用上限の直接変更 |
 
 参加者の「承認」は、自分の練習領域における操作であり、本人確認された専門家による組織的承認ではない。共有パスワードでは実名や個人の同一性は確認しない。
@@ -184,7 +184,7 @@ Community Cloudは`uv.lock`を認識し、uvを使う依存解決に対応する
 
 公開前に、専用プロジェクトの**Spend limitで強制停止（Enforce a hard limit）を有効にする**。費用通知（Spend alert）だけでは実行は止まらない。2026-09-14に確認した公式開発文書では、プロジェクト／組織の強制停止型上限が説明されている。ただし反映に遅延があり、少額の超過が起こり得る。[R5] 実際のアカウントで設定と権限を確認し、設定できない場合は未確認のまま公開完了としない。
 
-プロバイダー側の強制停止と、アプリ側の回数・長さ制限を両方使う。共有パスワードの転送、別ブラウザでの再ログイン、Cloud再起動を考慮し、セッション単位だけで金額を制限したと説明しない。
+標準構成は`CALL_BUDGET_MODE=provider_hard_limit`とし、費用の強制停止はプロバイダー側hard limitを正本とする。アプリ側は操作ごとのmodel call上限、入力・出力長、共有キュー、同時実行、RPM/TPM、利用監査、管理者停止を維持するが、全体・session別の累積call数では停止しない。共有パスワードの転送、別ブラウザでの再ログイン、Cloud再起動を考慮し、セッション単位だけで金額を制限したと説明しない。従来の有限枠が必要な環境だけ`CALL_BUDGET_MODE=finite`を明示する。
 
 ### 3.3 Cloudの一時保存を前提とする
 
@@ -193,9 +193,9 @@ Community Cloudは`uv.lock`を認識し、uvを使う依存解決に対応する
 そのため、知識データと利用台帳の消失を同じように扱わない。
 
 - 知識データ：消失・破損を表示する。既存作業を初期サンプルに黙って置き換えない。利用者が「新しい練習領域として開始」を明示した場合だけ別領域を作る。作業消失の復旧成功とは表示しない。
-- 全体利用台帳：失われたとき、残額ゼロからではなく「新しい満額」で自動再開してはいけない。**LLMを停止状態にし、管理者が外部利用量を確認してから有限枠を明示的に有効化する。**
+- 利用監査台帳：失われたとき、過去のcall数やtoken数を0件だったと解釈しない。`provider_hard_limit`では新しい監査台帳で記録を再開するが、費用上限はOpenAI project側hard limitが継続していることを運営者が確認する。`finite`では従来どおり停止し、管理者が外部利用量確認後に有限枠を明示的に有効化する。
 
-Cloud再デプロイ等の後に管理者操作が必要になる可能性を運用手順へ記載する。講演後に無人で長期運用する段階では、利用台帳を永続的な外部DBへ移す。初期版でその構成まで追加しない。
+管理者停止またはprovider上限エラー後の再開には、hard limit確認を伴う管理者操作を必要とする。講演後に無人で長期運用する段階では、利用監査台帳を永続的な外部DBへ移す。初期版でその構成まで追加しない。
 
 ## 4. 画面と利用の流れ
 
@@ -800,8 +800,9 @@ OpenAI Agents SDKの関数ツールは、既定では例外をLLM向けのエラ
 
 | 項目 | 初期値 | 適用範囲 |
 |---|---:|---|
-| `APP_MAX_LLM_CALLS` | 600 | 台帳に対する累積の許可上限。毎日自動リセットしない |
-| `SESSION_MAX_LLM_CALLS` | 40 | 認証session単位。会話・知識初期化では戻さない |
+| `CALL_BUDGET_MODE` | `provider_hard_limit` | 標準はOpenAI project側hard limitを費用上限に使用。`finite`のみアプリ内累積call枠を使用 |
+| `APP_MAX_LLM_CALLS` | 600 | `finite`互換モードだけで使う累積許可上限 |
+| `SESSION_MAX_LLM_CALLS` | 40 | `finite`互換モードだけで使う認証session単位上限 |
 | `MAX_MODEL_CALLS_PER_ACTION` | 6 | Runner内部の各model callを数える。自動修復は行わない |
 | `MAX_TOOL_CALLS_PER_ACTION` | 8 | 無限探索を防ぐ |
 | `MAX_CONCURRENT_JOBS` | 3 | 全セッション共通の実行ジョブ数。事前試験後、設定変更で5を検討 |
@@ -830,18 +831,18 @@ UIボタン1回とAPI1回は同じではない。質問で複数回のmodel call
 
 `control.sqlite3`には最低限、次のデータを置く。
 
-- `control_state`：schema_version、enabled、allocated_calls、hard_call_ceiling、auth_version、状態更新時刻。
+- `control_state`：schema_version、enabled、budget_mode、allocated_calls、hard_call_ceiling、auth_version、状態更新時刻。
 - `api_calls`：一意call_id、action_id、session_id、ordinal、model、状態、予約時刻、完了時刻、入力・出力利用量、safe error code。
 - `admin_events`：停止／有効化／枠追加、actor、理由、時刻。
 - `auth_sessions`：ランダムid、role、期限、auth_version、失効状態。
 - `jobs / job_events`：第12.5節の待機・実行・結果状態、所有者、凍結入力、期限、実行トークン。
 - `rate_reservations`：全体のRPM/TPM予約、送信時刻、call_id、確定利用量。
 
-初回作成時はenabled=false、allocated_calls=0。参加者操作ではenableできない。管理者が「プロジェクトの費用上限を確認した」ことと利用枠Nを指定して有効化する。累積allocated_callsはAPP_MAX_LLM_CALLSを超えない。
+`provider_hard_limit`の初回作成時はenabled=true、allocated_calls=0とする。allocated_callsとhard_call_ceilingは互換列として保持するが、送信可否へ使用しない。管理者停止とprovider上限エラー時はenabled=falseにし、hard limit確認後の管理者再開を必要とする。
 
-管理者の追加枠は台帳イベントとして加算する。使用済み数をゼロに戻す操作を設けない。全体上限を増やす必要があれば、運営者がCloud設定を変更し、外部利用量も確認する。
+`finite`では初回enabled=false、allocated_calls=0とし、管理者の追加枠を台帳イベントとして加算する。使用済み数をゼロに戻す操作を設けず、累積allocated_callsはAPP_MAX_LLM_CALLSを超えない。
 
-台帳が欠損・破損・不明なschemaになったときは停止する。欠損時にスキーマだけ作成しても、enabled=false・枠0とする。既存台帳の使用済み数を読めないことを「未使用」と解釈しない。回復には管理者が外部利用量を確認する操作を必要とする。
+台帳が破損・不明なschemaになったときは停止する。台帳が欠損して新規作成された場合、`provider_hard_limit`では監査履歴が失われた事実を運用上記録しつつenabled=trueで開始し、費用上限はOpenAI側に委ねる。`finite`ではenabled=false・枠0とする。どちらも消失前の使用済み数を「未使用」と主張しない。
 
 ### 12.3 送信前のアトミックな予約
 
@@ -853,7 +854,8 @@ UIボタン1回とAPI1回は同じではない。質問で複数回のmodel call
 → ジョブの有効性・取消・実行期限を確認
 → 同時枠とRPM/TPMの空きを待つ（送信前のみ。期限内、DBロックなし）
 → 短い台帳トランザクションを開始
-    enabledと残り枠、session上限、action上限、同時枠、RPM/TPMを再検査
+    enabled、budget mode、action上限、同時枠、RPM/TPMを再検査
+    finiteの場合だけ残り枠とsession上限を再検査
     条件未成立なら予約せず抜け、期限まで待機する
     成立時にcall_id、active枠、RPM/TPM予約を記録し1回分を先に消費
   コミット
@@ -990,6 +992,7 @@ ADMIN_PASSWORD_HASH='REPLACE_WITH_DIFFERENT_ARGON2ID_HASH'
 AUTH_VERSION='wg4-v1'
 DEMO_EXPIRES_AT='REPLACE_WITH_TIMEZONE_AWARE_ISO8601_DATETIME'
 APP_LLM_ENABLED=false
+CALL_BUDGET_MODE=provider_hard_limit
 APP_MAX_LLM_CALLS=600
 SESSION_MAX_LLM_CALLS=40
 MAX_CONCURRENT_JOBS=3
@@ -1017,6 +1020,7 @@ ADMIN_PASSWORD_HASH = "REPLACE_WITH_DIFFERENT_ARGON2ID_HASH"
 AUTH_VERSION = "wg4-v1"
 DEMO_EXPIRES_AT = "REPLACE_WITH_TIMEZONE_AWARE_ISO8601_DATETIME"
 APP_LLM_ENABLED = false
+CALL_BUDGET_MODE = "provider_hard_limit"
 APP_MAX_LLM_CALLS = 600
 SESSION_MAX_LLM_CALLS = 40
 MAX_CONCURRENT_JOBS = 3
@@ -1257,7 +1261,7 @@ uv run --locked --env-file .env streamlit run app.py
 
 preflightは既定で非課金とする。必須設定の有無、パス、seed整合性、依存バージョン、台帳の状態だけを検査し、実キーの値を出さない。接続テストを追加する場合は`--live`を明示的に要求し、認証・台帳ゲートを迂回しない。
 
-API停止状態でもログイン・サンプル閲覧・非課金テストは可能にする。実LLMを有効化するには、設定の`APP_LLM_ENABLED=true`と、別の管理者ログインによる有限枠の有効化が必要である。
+API停止状態でもログイン・サンプル閲覧・非課金テストは可能にする。標準の`provider_hard_limit`では、`APP_LLM_ENABLED=true`と必須設定がそろえば有限call枠の追加なしで実LLMを利用できる。管理者停止またはprovider上限エラー後の再開だけは、外部hard limit確認を伴う管理者操作を必要とする。
 
 ### 16.3 Cloudの作業
 
@@ -1267,7 +1271,7 @@ API停止状態でもログイン・サンプル閲覧・非課金テストは�
 4. `secrets.example.toml`と同じキー構成で、実値をCloudのSecrets欄へ登録する。
 5. uv.lockによる依存処理と起動ログを確認する。複数の依存方式で無理に回避しない。
 6. 未認証ブラウザから、ログイン前にLLMも知識機能も動かないことを確認する。
-7. 管理者が専用OpenAIプロジェクトの強制停止型支出上限を確認し、有限のAPI呼出し枠を有効化する。
+7. 管理者が専用OpenAIプロジェクトの強制停止型支出上限と、管理画面の`provider_hard_limit`表示を確認する。
 8. 独立ブラウザで領域分離を確認し、第17.5節の30セッション試験を実施する。APIの同時数・待機・取消・失敗を確認し、Cloud負荷を実測する。
 9. 実APIによる主シナリオと、未承認状態／新版／空の会話履歴を確認する。
 10. 完了後に実在する公開URLをREADMEへ記載し、必要に応じてQRコードを作る。
@@ -1407,7 +1411,7 @@ LIVE-11の追加テストデータは、同じ冷却器1・事例1・同じ点�
 HTTP GETを30回送るだけではなく、Playwrightの独立Browser Contextを30作り、ログイン→サンプル選択→実行送信→状態照会を行う。[R22] 負荷生成はCloudと別の端末・プロセスで実行し、対象アプリにはワーカーとアプリ処理だけを載せる。
 
 1. ローカルのテスト専用構成で、実APIを使わない遅延FakeLLM（例：操作全体20秒）を明示的に依存注入し、キューの容量・順番・期限・分離を検査する。これは外部障害時のフォールバックではなく、独立したテスト経路である。通常のCloud入口はfakeを選べない。
-2. 実API試験は専用キー・有限枠・運営者の承認の下で、1→5→10→30セッションと増やす。公開予定のCloud環境で最終試験を行う。途中で枠、認証、分離、検証が破れた場合は先へ進まない。
+2. 実API試験は専用キー・provider hard limit・運営者の承認の下で、1→5→10→30セッションと増やす。公開予定のCloud環境で最終試験を行う。途中でレート上限、認証、分離、検証が破れた場合は先へ進まない。
 3. 待機時間と実行時間の中央値・p95・最大値、成功／失敗／期限切れ件数、実API数、token数、最大同時数、メモリ、DBロックエラーを分けて記録する。APIエラーを根拠なしへ変換して成功率に加えない。
 4. 初期3並列から5並列へ増やすのは、実モデルのRPM/TPMとCloud資源に余裕があると確認した場合に限る。設定変更後、同じ試験を再実行する。アプリが混雑を検知して自動で上限を上げる機能は作らない。
 

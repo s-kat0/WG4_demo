@@ -8,10 +8,16 @@ from pathlib import Path
 from wg4_demo.database import connect_sqlite, transaction
 from wg4_demo.errors import ConfigurationError
 
-CONTROL_SCHEMA_VERSION = 1
+CONTROL_SCHEMA_VERSION = 2
 
 
-def initialize_control_store(path: Path, *, hard_call_ceiling: int, auth_version: str) -> None:
+def initialize_control_store(
+    path: Path,
+    *,
+    hard_call_ceiling: int,
+    auth_version: str,
+    budget_mode: str,
+) -> None:
     connection = connect_sqlite(path)
     try:
         with transaction(connection, immediate=True):
@@ -23,6 +29,9 @@ def initialize_control_store(path: Path, *, hard_call_ceiling: int, auth_version
                     enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
                     allocated_calls INTEGER NOT NULL CHECK (allocated_calls >= 0),
                     hard_call_ceiling INTEGER NOT NULL CHECK (hard_call_ceiling > 0),
+                    budget_mode TEXT NOT NULL CHECK (
+                        budget_mode IN ('finite', 'provider_hard_limit')
+                    ),
                     auth_version TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -121,29 +130,69 @@ def initialize_control_store(path: Path, *, hard_call_ceiling: int, auth_version
                 );
                 """
             )
-            row = connection.execute(
-                "SELECT schema_version, auth_version FROM control_state WHERE singleton = 1"
-            ).fetchone()
+            row = connection.execute("SELECT * FROM control_state WHERE singleton = 1").fetchone()
             if row is None:
                 connection.execute(
                     """
                     INSERT INTO control_state (
                         singleton, schema_version, enabled, allocated_calls,
-                        hard_call_ceiling, auth_version, updated_at
-                    ) VALUES (1, ?, 0, 0, ?, ?, datetime('now'))
+                        hard_call_ceiling, budget_mode, auth_version, updated_at
+                    ) VALUES (1, ?, ?, 0, ?, ?, ?, datetime('now'))
                     """,
-                    (CONTROL_SCHEMA_VERSION, hard_call_ceiling, auth_version),
+                    (
+                        CONTROL_SCHEMA_VERSION,
+                        int(budget_mode == "provider_hard_limit"),
+                        hard_call_ceiling,
+                        budget_mode,
+                        auth_version,
+                    ),
                 )
-            elif row["schema_version"] != CONTROL_SCHEMA_VERSION:
-                raise ConfigurationError("利用台帳のschemaが不明なため、LLM機能を停止しました。")
-            elif row["auth_version"] != auth_version:
+                return
+            if row["schema_version"] == 1:
                 connection.execute(
                     """
-                    UPDATE control_state SET enabled = 0, auth_version = ?, updated_at = datetime('now')
+                    ALTER TABLE control_state ADD COLUMN budget_mode TEXT NOT NULL
+                    DEFAULT 'finite' CHECK (budget_mode IN ('finite', 'provider_hard_limit'))
+                    """,
+                )
+                connection.execute(
+                    "UPDATE control_state SET schema_version = ? WHERE singleton = 1",
+                    (CONTROL_SCHEMA_VERSION,),
+                )
+                row = connection.execute(
+                    "SELECT * FROM control_state WHERE singleton = 1"
+                ).fetchone()
+            elif row["schema_version"] != CONTROL_SCHEMA_VERSION:
+                raise ConfigurationError("利用台帳のschemaが不明なため、LLM機能を停止しました。")
+            if row is None:
+                raise ConfigurationError("利用台帳を初期化できませんでした。")
+            if row["budget_mode"] != budget_mode:
+                connection.execute(
+                    """
+                    UPDATE control_state
+                    SET budget_mode = ?, enabled = ?, auth_version = ?, updated_at = datetime('now')
                     WHERE singleton = 1
                     """,
-                    (auth_version,),
+                    (budget_mode, int(budget_mode == "provider_hard_limit"), auth_version),
                 )
+            elif row["auth_version"] != auth_version:
+                if budget_mode == "finite":
+                    connection.execute(
+                        """
+                        UPDATE control_state
+                        SET enabled = 0, auth_version = ?, updated_at = datetime('now')
+                        WHERE singleton = 1
+                        """,
+                        (auth_version,),
+                    )
+                else:
+                    connection.execute(
+                        """
+                        UPDATE control_state SET auth_version = ?, updated_at = datetime('now')
+                        WHERE singleton = 1
+                        """,
+                        (auth_version,),
+                    )
     except sqlite3.DatabaseError as exc:
         raise ConfigurationError("利用台帳を読み取れないため、LLM機能を停止しました。") from exc
     finally:

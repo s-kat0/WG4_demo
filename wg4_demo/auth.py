@@ -28,6 +28,7 @@ class AuthService:
             control_db,
             hard_call_ceiling=settings.app_max_llm_calls,
             auth_version=settings.auth_version or "UNCONFIGURED",
+            budget_mode=settings.call_budget_mode,
         )
         self.hasher = PasswordHasher(memory_cost=19456, time_cost=2, parallelism=1)
 

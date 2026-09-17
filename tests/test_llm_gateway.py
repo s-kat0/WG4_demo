@@ -15,7 +15,6 @@ from wg4_demo.schemas import (
     FactDraft,
     FactKind,
     KnowledgeDraft,
-    Role,
     SessionRecord,
 )
 from wg4_demo.settings import Settings
@@ -59,13 +58,6 @@ def enabled_ledger(
     settings: Settings, auth: AuthService, participant: SessionRecord
 ) -> UsageLedger:
     ledger = UsageLedger(settings.control_db_path, settings, auth)
-    admin = auth.login("admin-secret", role=Role.ADMIN, client_token="gateway-admin")
-    ledger.enable_budget(
-        admin.id,
-        additional_calls=10,
-        confirmed_external_limit=True,
-        reason="gateway tests",
-    )
     return ledger
 
 

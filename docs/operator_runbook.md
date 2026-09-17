@@ -6,13 +6,13 @@
 - 独立ブラウザで参加者／管理者認証を確認
 - 専用OpenAIプロジェクトのモデル権限、強制停止型支出上限、残利用量を確認
 - `OPENAI_MODEL=gpt-5.6-luna`、`OPENAI_REASONING_EFFORT=low`を固定し、Dashboardの実上限以下で`GLOBAL_RPM=60`、`GLOBAL_TPM=200000`を初期候補として確認
-- Cloud台帳を有限枠だけ有効化
+- 管理画面で`provider_hard_limit`モード、利用回数、active数を確認
 - 30-session試験結果と当日の人数分割方針を確認
 - アプリ外の録画を「記録の再生」と分かる形で用意
 
 ## 講演中
 
-- 管理画面でenabled、allocated、used、activeを監視
+- 管理画面でenabled、budget_mode、used、activeを監視
 - 待機中の参加者へ再送を促さない
 - provider hard-limit、台帳障害、秘密漏えい疑いでは新規LLM要求を停止
 - 失敗を固定回答・別モデル・過去結果へ置換しない
@@ -26,4 +26,4 @@
 
 ## 事故時
 
-キー漏えい疑いでは、アプリ停止→キー失効・ローテーション→provider利用量確認の順。パスワード漏えいでは両パスワードと`AUTH_VERSION`を変更する。DB消失時は自動seed復旧や満額再開をせず、外部利用量確認後に新しい練習領域として開始する。
+キー漏えい疑いでは、アプリ停止→キー失効・ローテーション→provider利用量確認の順。パスワード漏えいでは両パスワードと`AUTH_VERSION`を変更する。DB消失時は知識を自動seed復旧の成功として扱わず、監査台帳の過去回数も復元できないと表示・記録する。費用停止はOpenAI側hard limitが継続していることを確認する。

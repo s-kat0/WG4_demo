@@ -34,6 +34,7 @@ class UsageLedger:
             control_db,
             hard_call_ceiling=settings.app_max_llm_calls,
             auth_version=settings.auth_version or "UNCONFIGURED",
+            budget_mode=settings.call_budget_mode,
         )
 
     def status(self) -> dict[str, int | bool | str]:
@@ -48,6 +49,7 @@ class UsageLedger:
             ).fetchone()["count"]
             return {
                 "enabled": bool(state["enabled"]),
+                "budget_mode": state["budget_mode"],
                 "allocated_calls": state["allocated_calls"],
                 "used_calls": used,
                 "active_calls": active,
@@ -77,10 +79,19 @@ class UsageLedger:
         try:
             with transaction(connection, immediate=True):
                 row = connection.execute(
-                    "SELECT allocated_calls, hard_call_ceiling FROM control_state WHERE singleton = 1"
+                    """
+                    SELECT allocated_calls, hard_call_ceiling, budget_mode
+                    FROM control_state WHERE singleton = 1
+                    """
                 ).fetchone()
                 if row is None:
                     raise ConfigurationError("利用台帳がありません。")
+                if row["budget_mode"] != "finite":
+                    raise AppError(
+                        "finite_budget_not_enabled",
+                        "現在はOpenAI側hard limitを使用するモードです。",
+                        "budget",
+                    )
                 allocation = row["allocated_calls"] + additional_calls
                 if allocation > row["hard_call_ceiling"]:
                     raise AppError(
@@ -101,6 +112,49 @@ class UsageLedger:
                     VALUES (?, ?, 'enable_or_add', ?, ?, ?)
                     """,
                     (str(uuid4()), admin_session_id, reason, additional_calls, current.isoformat()),
+                )
+        finally:
+            connection.close()
+
+    def resume_with_provider_limit(
+        self,
+        admin_session_id: str,
+        *,
+        confirmed_external_limit: bool,
+        reason: str,
+        now: datetime | None = None,
+    ) -> None:
+        current = now or datetime.now(UTC)
+        self.auth.require_session(admin_session_id, role=Role.ADMIN, now=current)
+        if not confirmed_external_limit:
+            raise AuthorizationError("外部の強制停止型支出上限の確認が必要です。")
+        connection = connect_sqlite(self.control_db)
+        try:
+            with transaction(connection, immediate=True):
+                row = connection.execute(
+                    "SELECT budget_mode FROM control_state WHERE singleton = 1"
+                ).fetchone()
+                if row is None:
+                    raise ConfigurationError("利用台帳がありません。")
+                if row["budget_mode"] != "provider_hard_limit":
+                    raise AppError(
+                        "provider_limit_mode_not_enabled",
+                        "現在はアプリ内有限call枠を使用するモードです。",
+                        "budget",
+                    )
+                connection.execute(
+                    """
+                    UPDATE control_state SET enabled = 1, updated_at = ? WHERE singleton = 1
+                    """,
+                    (current.isoformat(),),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO admin_events (
+                        id, actor_session_id, event_type, reason, amount, created_at
+                    ) VALUES (?, ?, 'resume_provider_limit', ?, NULL, ?)
+                    """,
+                    (str(uuid4()), admin_session_id, reason, current.isoformat()),
                 )
         finally:
             connection.close()
@@ -156,21 +210,28 @@ class UsageLedger:
                 ).fetchone()
                 if state is None or not state["enabled"]:
                     raise AppError("llm_disabled", "LLM機能は現在停止中です。", "budget")
+                if state["budget_mode"] != self.settings.call_budget_mode:
+                    raise ConfigurationError("利用上限モードが設定と一致しないため停止しました。")
                 if state["auth_version"] != self.settings.auth_version:
                     raise AppError("auth_version_mismatch", "認証設定が更新されました。", "budget")
-                used = connection.execute("SELECT COUNT(*) AS count FROM api_calls").fetchone()[
-                    "count"
-                ]
-                if used >= state["allocated_calls"] or used >= state["hard_call_ceiling"]:
-                    raise AppError("call_budget_exhausted", "LLM利用枠を使い切りました。", "budget")
-                session_used = connection.execute(
-                    "SELECT COUNT(*) AS count FROM api_calls WHERE session_id = ?",
-                    (session_id,),
-                ).fetchone()["count"]
-                if session_used >= self.settings.session_max_llm_calls:
-                    raise AppError(
-                        "session_budget_exhausted", "このセッションの利用上限です。", "budget"
-                    )
+                if state["budget_mode"] == "finite":
+                    used = connection.execute("SELECT COUNT(*) AS count FROM api_calls").fetchone()[
+                        "count"
+                    ]
+                    if used >= state["allocated_calls"] or used >= state["hard_call_ceiling"]:
+                        raise AppError(
+                            "call_budget_exhausted", "LLM利用枠を使い切りました。", "budget"
+                        )
+                    session_used = connection.execute(
+                        "SELECT COUNT(*) AS count FROM api_calls WHERE session_id = ?",
+                        (session_id,),
+                    ).fetchone()["count"]
+                    if session_used >= self.settings.session_max_llm_calls:
+                        raise AppError(
+                            "session_budget_exhausted",
+                            "このセッションの利用上限です。",
+                            "budget",
+                        )
                 action_used = connection.execute(
                     "SELECT COUNT(*) AS count FROM api_calls WHERE action_id = ?",
                     (action_id,),

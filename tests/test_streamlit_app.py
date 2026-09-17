@@ -38,6 +38,13 @@ def test_unauthenticated_app_shows_only_safe_login_surface(
     assert not app.exception
     assert app.title[0].value == "現場知識をつなぐミニエージェント"
     assert any(widget.label == "共通パスワード" for widget in app.text_input)
+    assert not any(widget.label == "開始する練習領域" for widget in app.radio)
+    assert not any(
+        phrase in element.value
+        for phrase in ("旧デモ互換", "空の領域から開始")
+        for element in [*app.markdown, *app.caption]
+        if isinstance(element.value, str)
+    )
     assert not app.download_button
     from wg4_demo.ui.app import _services
 
@@ -75,12 +82,35 @@ def test_authenticated_navigation_keeps_api_disabled(
 
     assert not app.exception
     navigation = next(widget for widget in app.radio if widget.label == "画面")
+    assert list(navigation.options) == [
+        "知識を探す",
+        "エージェントに相談する",
+        "知識を追加・補足する",
+        "更新案・実回答比較",
+    ]
     navigation.set_value("知識を探す")
     app.run()
     assert not app.exception
     assert app.header[0].value == "1. 知識を探す"
     assert app.download_button
     assert any(button.label == "検索する（API不使用）" for button in app.button)
+    assert not any(button.label == "この領域を初期状態へ戻す" for button in app.button)
+    services = _services()
+    workspace_id = app.session_state["workspace_id"]
+    workspace = services.repository.require_workspace(app.session_state["session_id"], workspace_id)
+    assert workspace.seed_mode == "practical_v5"
+    assert len(services.repository.list_knowledge(workspace_id)) == 12
+
+    next(button for button in app.button if button.label == "管理画面を開く").click()
+    app.run()
+    assert not app.exception
+    assert app.header[0].value == "管理"
+    assert any(widget.label == "管理者パスワード" for widget in app.text_input)
+    assert not any(widget.label == "画面" for widget in app.radio)
+    next(button for button in app.button if button.label == "参加者画面へ戻る").click()
+    app.run()
+    assert not app.exception
+    assert app.header[0].value == "1. 知識を探す"
 
     navigation = next(widget for widget in app.radio if widget.label == "画面")
     navigation.set_value("更新案・実回答比較")
@@ -93,8 +123,6 @@ def test_authenticated_navigation_keeps_api_disabled(
         for markdown in app.markdown
         if isinstance(markdown.value, str)
     )
-    services = _services()
-    workspace_id = app.session_state["workspace_id"]
     _, mapping = services.repository.register_source(
         workspace_id,
         title="UIテスト保全記録",

@@ -29,6 +29,38 @@
 
 承認前の情報は通常検索へ入りません。新しい会話では会話履歴だけが消え、承認済み知識は残ります。
 
+## 講演後に学ぶための見どころ
+
+このリポジトリで見ていただきたいのは、AIがそれらしい回答を生成する部分だけではありません。文書や経験談を、出典・適用条件・版と結び付け、人の承認を境界として安全に利用する一連の設計が中心です。
+
+### まず10分で全体像をつかむ
+
+1. [参加者向け操作ガイド](docs/participant_guide.md)で、検索、相談、知識の補足、承認後の再利用という流れを確認する
+2. [初期知識カタログ](docs/seed_catalog_v5.md)で、文書由来とQ&A由来の知識がどのように収録されているかを見る
+3. [デモ進行ガイド](docs/demo_quick_guide.md)で、文書のみの状態A、聞き取りで補足した状態B、回答へのフィードバックを承認した状態Cの違いを確認する
+
+### 関心別の読みどころ
+
+| 関心 | 最初に見る場所 | 学べること |
+|---|---|---|
+| 業務での使い方・知識継承 | [参加者向け操作ガイド](docs/participant_guide.md)、[初期知識カタログ](docs/seed_catalog_v5.md) | 文書検索だけで終わらず、理由や条件を本人への聞き取りで補い、人が確認してから再利用する流れ |
+| 知識・根拠・版の持ち方 | [`schemas.py`](wg4_demo/schemas.py)、[`repository.py`](wg4_demo/repository.py)、[`knowledge_seed_v5.json`](data/knowledge_seed_v5.json) | KnowledgeItem、fact、原文根拠、版、Proposal、Approvalを分ける理由 |
+| 検索と根拠提示 | [`retrieval.py`](wg4_demo/retrieval.py)、[`graph.py`](wg4_demo/graph.py)、[`evidence.py`](wg4_demo/evidence.py)、[`tools.py`](wg4_demo/tools.py) | 決定的な検索、関連知識のグラフ探索、取得済み根拠だけを回答へ渡す構造 |
+| LLMの使い方と安全境界 | [`llm_gateway.py`](wg4_demo/llm_gateway.py)、[`agent_runtime.py`](wg4_demo/agent_runtime.py)、[`result_validation.py`](wg4_demo/result_validation.py)、[`prompts/`](prompts/)、[障害時の挙動](docs/failure_matrix.md) | モデル呼び出しの一元化、structured outputの検証、検索0件と処理失敗の区別、意図しないfallbackを返さない設計 |
+| 人による確認と承認 | [`approvals.py`](wg4_demo/approvals.py)、[`review.py`](wg4_demo/ui/review.py)、[`test_repository.py`](tests/test_repository.py)、[`test_v5_workflows.py`](tests/test_v5_workflows.py) | 未承認情報を通常検索から遮断し、承認時だけ新版を発行する仕組み |
+| 複数参加者での運用 | [`jobs.py`](wg4_demo/jobs.py)、[`scheduler.py`](wg4_demo/scheduler.py)、[`usage_ledger.py`](wg4_demo/usage_ledger.py)、[`auth.py`](wg4_demo/auth.py)、[負荷試験レポート](docs/load_test_report.md) | workspace分離、共有キュー、同時実行制限、利用量管理、認証の役割 |
+
+### コードを読むときの問い
+
+- 「原因」「確認行動」「適用条件」を分けて保存することで、どの誤解を防いでいるか
+- 検索や原文取得をLLM任せにせず、決定的な処理として分離しているのはなぜか
+- 未承認候補が正式知識へ変わる境界はどこにあり、二重承認をどう防いでいるか
+- 正常な検索0件と、検索処理そのものの失敗をUIとデータ型でどう区別しているか
+- API失敗時に自動再送や代替回答を行わない判断には、どのような利点と運用上の負担があるか
+- 実設備へ適用するなら、権限管理、監査、評価データ、責任分界をどこまで追加する必要があるか
+
+このアプリは架空の設備事例を使った教材です。実設備の診断、安全判断、作業指示には使用せず、公開デモへ機密情報や個人情報を入力しないでください。
+
 ## 現在の確認状況
 
 2026年9月17日時点の現行ブランチで、次を確認しています。

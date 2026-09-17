@@ -173,13 +173,17 @@ def render_answer(
                     st.write(f"- {fact.text}（{scope}）")
             else:
                 st.write("- 明示された条件なし")
+            has_decision_reason = any(
+                facts[fact_id].kind is FactKind.DECISION_REASON
+                for fact_id in candidate.supporting_fact_ids
+            )
             if candidate.supporting_fact_ids:
                 st.write("判断理由・例外・補足")
                 for fact_id in candidate.supporting_fact_ids:
                     fact = facts[fact_id]
                     label = "判断理由" if fact.kind is FactKind.DECISION_REASON else fact.kind.value
                     st.write(f"- {label}: {fact.text}")
-            elif answer.intent == "reason_explanation":
+            if answer.intent == "reason_explanation" and not has_decision_reason:
                 st.warning("この知識には、本人が述べた判断理由の記録がありません。")
             if item.missing_fields:
                 st.write("未確認事項: " + "、".join(item.missing_fields))

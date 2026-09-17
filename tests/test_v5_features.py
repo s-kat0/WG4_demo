@@ -423,7 +423,7 @@ def test_answer_snapshots_keep_real_success_and_failure_records(
         "target_version": 1,
         "model_id": "test-model",
         "model_settings": {"store": False},
-        "prompt_version": "wg4-prompts-v14",
+        "prompt_version": "wg4-prompts-v15",
         "schema_version": "wg4-schema-v2",
         "retrieval_version": "wg4-lexical-v2",
     }

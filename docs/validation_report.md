@@ -104,7 +104,11 @@ pytestのskip 1件は、`RUN_LIVE_TESTS=1`が明示されていない既存live 
 
 ## Cloud・実画面
 
-Streamlit Community Cloudへのdeploy、Cloud Secrets、公開URL、Cloud実API、Cloud 30 sessionは未実施。
+Streamlit Community Cloudの公開URL `https://wg4-demo-kato.streamlit.app/`へdeployし、Cloud Secrets設定後の参加者ログイン成功は運営者が確認した。初回の「現行知識を調べて相談する」は`agent_turn_limit`で失敗し、代替回答は表示されなかった。
+
+原因は、`parallel_tool_calls=False`で検索、複数候補のグラフ、原文を直列取得する一方、一操作のmodel call上限が6、tool call上限が8で、正常経路の最終回答前にmodel turnが尽き得る不整合だった。model call予算を12へ変更し、同じ引数のツール反復を禁止して、必要な原文IDの一括取得と根拠取得後の終了をpromptに明記した。tool call上限8、timeout、RPM/TPM、SDK retry 0、provider hard limitは維持した。
+
+修正後、公開画面と同じ初期12件と既定質問を使い、`gpt-5.6-luna`、reasoning `medium`で新規の実API検証を1回実施した。15.249秒、4 calls、入力13,179 tokens、出力523 tokensで成功し、`search_knowledge`→`get_context`→`read_evidence`後に候補1件を返した。別モデル、自動再送、固定回答は使用していない。Cloudへの修正反映後の再確認とCloud 30 session実機試験は未実施。
 
 v5 fullの実API処理は成功したが、スライド用の実ブラウザ画面はまだ撮影していない。
 

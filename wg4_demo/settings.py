@@ -30,7 +30,7 @@ class Settings(BaseModel):
     call_budget_mode: Literal["finite", "provider_hard_limit"] = "provider_hard_limit"
     app_max_llm_calls: int = Field(default=600, ge=1)
     session_max_llm_calls: int = Field(default=40, ge=1)
-    max_model_calls_per_action: int = Field(default=6, ge=1, le=20)
+    max_model_calls_per_action: int = Field(default=12, ge=1, le=20)
     max_tool_calls_per_action: int = Field(default=8, ge=1, le=32)
     max_concurrent_jobs: int = Field(default=3, ge=1, le=10)
     max_pending_jobs: int = Field(default=30, ge=1, le=100)
@@ -148,7 +148,7 @@ def settings_from_mapping(
     integer_defaults = {
         "APP_MAX_LLM_CALLS": 600,
         "SESSION_MAX_LLM_CALLS": 40,
-        "MAX_MODEL_CALLS_PER_ACTION": 6,
+        "MAX_MODEL_CALLS_PER_ACTION": 12,
         "MAX_TOOL_CALLS_PER_ACTION": 8,
         "MAX_CONCURRENT_JOBS": 3,
         "MAX_PENDING_JOBS": 30,

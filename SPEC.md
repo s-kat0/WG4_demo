@@ -604,7 +604,7 @@ clarification_requestsには質問文と、関連する不足条件ID（未定�
 - 全ての呼出しで`store=False`を明示する。
 - 外部トレーシングは最初の実行前から無効化する。
 - OpenAIクライアントの自動retryは`max_retries=0`。SDKの別のretry機構も有効化しない。
-- 一操作のmodel call最大6回、ツール最大8回、生成上限2048 tokensを初期値とする。
+- 一操作のmodel call予算は最大12回、ツール最大8回、生成上限2048 tokensを初期値とする。Agents SDKの1 turnは1回のmodel callであり、`parallel_tool_calls=False`のため、検索、最大3候補のグラフ探索・原文取得、最終構造化出力を順番に行う正常経路が6 turnを超える場合がある。ツール上限に達した後は追加のツール呼出しを拒否するため、model call予算を無制限にはしない。
 - `parallel_tool_calls=False`。複数APIの無制限並列実行をしない。
 - SDKの`max_turns`だけに頼らず、実リクエスト直前のゲートで回数を数える。
 - ツール未使用で一般知識だけの候補を返した場合、根拠付き回答として受理しない。
@@ -806,7 +806,7 @@ OpenAI Agents SDKの関数ツールは、既定では例外をLLM向けのエラ
 | `CALL_BUDGET_MODE` | `provider_hard_limit` | 標準はOpenAI project側hard limitを費用上限に使用。`finite`のみアプリ内累積call枠を使用 |
 | `APP_MAX_LLM_CALLS` | 600 | `finite`互換モードだけで使う累積許可上限 |
 | `SESSION_MAX_LLM_CALLS` | 40 | `finite`互換モードだけで使う認証session単位上限 |
-| `MAX_MODEL_CALLS_PER_ACTION` | 6 | Runner内部の各model callを数える。自動修復は行わない |
+| `MAX_MODEL_CALLS_PER_ACTION` | 12 | Runner内部の各model callを数える。ツール上限8回・timeout・RPM/TPMも別途適用し、自動修復は行わない |
 | `MAX_TOOL_CALLS_PER_ACTION` | 8 | 無限探索を防ぐ |
 | `MAX_CONCURRENT_JOBS` | 3 | 全セッション共通の実行ジョブ数。事前試験後、設定変更で5を検討 |
 | `MAX_PENDING_JOBS` | 30 | 実行中を除いた全体の待機件数 |

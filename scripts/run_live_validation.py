@@ -84,7 +84,7 @@ def live_settings(
             "call_budget_mode": "finite",
             "app_max_llm_calls": call_budget,
             "session_max_llm_calls": call_budget,
-            "max_model_calls_per_action": 6,
+            "max_model_calls_per_action": 12,
             "max_concurrent_jobs": 1,
             "max_concurrent_llm": 1,
             "global_rpm": 20,
@@ -326,6 +326,45 @@ def smoke(services: Services, session_id: str) -> dict[str, Any]:
         "extract_seconds": round(extract_seconds, 3),
         "qa_seconds": round(qa_seconds, 3),
         "qa_status": selection["status"],
+        "qa_tools": answer["tools"],
+        "usage": usage_summary(services.settings.control_db_path),
+    }
+
+
+def consult_v5(services: Services, session_id: str) -> dict[str, Any]:
+    """Exercise the public consultation entry against only the initial v5 seed."""
+
+    workspace = services.repository.create_workspace(
+        session_id,
+        seed_mode="practical_v5",
+        seed_path=PROJECT_ROOT / "data/knowledge_seed_v5.json",
+    )
+    conversation = services.repository.create_conversation(workspace.id)
+    demo = json.loads((PROJECT_ROOT / "data/demo_inputs_v5.json").read_text("utf-8"))
+    question = str(demo["free_dialogue_example"][0]["text"])
+    state = services.conversations.prepare_turn(workspace.id, conversation, question)
+    consultation = services.conversations.payload_for_turn(state)
+    services.repository.append_message(workspace.id, conversation, role="user", text=question)
+    answer, qa_seconds = run_job(
+        services,
+        session_id=session_id,
+        workspace_id=workspace.id,
+        conversation_id=conversation,
+        mode="qa",
+        phase="consult_v5",
+        payload={"question": question, "consultation": consultation},
+    )
+    selection = answer["selection"]
+    required_tools = {"search_knowledge", "get_context", "read_evidence"}
+    if not required_tools.issubset(set(answer["tools"])):
+        raise RuntimeError("v5 consultation did not execute all required retrieval tools")
+    if selection["status"] not in {"candidates", "needs_clarification"}:
+        raise RuntimeError("v5 consultation returned an unexpected answer status")
+    return {
+        "question": question,
+        "qa_seconds": round(qa_seconds, 3),
+        "qa_status": selection["status"],
+        "qa_candidate_count": len(selection["candidates"]),
         "qa_tools": answer["tools"],
         "usage": usage_summary(services.settings.control_db_path),
     }
@@ -891,7 +930,7 @@ def full_v5(services: Services, session_id: str) -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["extract", "smoke", "full"], required=True)
+    parser.add_argument("--mode", choices=["extract", "smoke", "consult", "full"], required=True)
     parser.add_argument("--reasoning-effort", choices=["none", "low", "medium"], required=True)
     parser.add_argument("--call-budget", type=int, required=True)
     parser.add_argument("--confirmed-external-limit", action="store_true")
@@ -916,6 +955,8 @@ def main() -> int:
                 result = extract_only(services, participant_id)
             elif args.mode == "smoke":
                 result = smoke(services, participant_id)
+            elif args.mode == "consult":
+                result = consult_v5(services, participant_id)
             else:
                 result = full_v5(services, participant_id)
         except AppError as exc:

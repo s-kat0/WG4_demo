@@ -19,7 +19,7 @@ def render(services: Services) -> None:
             st.session_state.admin_session_id = None
             admin_session = None
     if not admin_session:
-        with st.form("admin-login"):
+        with st.form("admin-login", clear_on_submit=True):
             password = st.text_input("管理者パスワード", type="password")
             submitted = st.form_submit_button("管理者として認証")
         if submitted:

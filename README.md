@@ -14,6 +14,7 @@
 - workspaceごとに分離したSQLiteの原文、知識版、Proposal、Approval、会話、比較snapshot
 - 参加者／管理者のArgon2id認証、API利用監査台帳、共有FIFOキュー、同時実行3、待機30、1セッション1件
 - API、検索、検証、保存の失敗を固定回答、別モデル、前回回答、正常0件へ置換しないエラー契約
+- Cloud参加者画面は初期12件の練習領域と四つの主画面に限定。管理機能は別パスワード付きの折りたたみ入口へ分離
 
 ## ローカル起動
 
@@ -68,7 +69,7 @@ uv run --locked python scripts/create_password_hash.py
 
 詳細は [docs/demo_script_v5.md](docs/demo_script_v5.md)。主な流れは次のとおり。
 
-1. ログイン時に「実務デモを開始（初期12件）」を選ぶ
+1. 共通パスワードでログインする。初期12件を収録した自分専用の練習領域が作られる
 2. 「知識を探す」で`冷却器1 流量低下`を非課金検索し、文書またはQ&Aの原文を見る
 3. 「知識を追加・補足する」で保全記録1を抽出し、文書だけのpending案を作る
 4. 「更新案・実回答比較」で内容と原文を確認し、対象事例v1を承認する
@@ -91,10 +92,12 @@ API障害時は処理を停止する。録画や静止画を使う場合、講�
 3. `.streamlit/secrets.example.toml`と同じキーをCloud Secretsへ実値で登録する
 4. `APP_ENV="cloud"`を設定する
 5. 専用OpenAI projectのモデル利用可否、レート、強制停止型支出上限を確認する
-6. 管理画面で`budget_mode=provider_hard_limit`と利用回数を確認する
+6. サイドバー下部の「運営者用」から管理画面を開き、`budget_mode=provider_hard_limit`と利用回数を確認する
 7. 未認証、2ブラウザ分離、主シナリオ、1→5→10→30 sessionの段階試験を行う
 
-GitHub remote、Cloud URL、Cloud Secrets、公開操作はこの実装作業では設定しない。仮URLを稼働URLとして記載しない。
+Cloud URL、Cloud Secrets、公開操作はこの実装作業では設定しない。仮URLを稼働URLとして記載しない。
+
+参加者向けCloud UIには「旧デモ互換」「空の領域から開始」「領域を初期状態へ戻す」を表示しない。旧workspaceの読取りと回帰試験に必要なbackend互換処理は残す。新しい空の練習領域が必要な場合は、ログアウト後に再ログインして別workspaceを作る。
 
 ## 障害時の挙動
 

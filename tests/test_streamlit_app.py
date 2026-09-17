@@ -38,6 +38,13 @@ def test_unauthenticated_app_shows_only_safe_login_surface(
     assert not app.exception
     assert app.title[0].value == "現場知識をつなぐミニエージェント"
     assert any(widget.label == "共通パスワード" for widget in app.text_input)
+    assert not any(widget.label == "開始する練習領域" for widget in app.radio)
+    assert not any(
+        phrase in element.value
+        for phrase in ("旧デモ互換", "空の領域から開始")
+        for element in [*app.markdown, *app.caption]
+        if isinstance(element.value, str)
+    )
     assert not app.download_button
     from wg4_demo.ui.app import _services
 
@@ -68,19 +75,57 @@ def test_authenticated_navigation_keeps_api_disabled(
     _services.clear()
 
     app = AppTest.from_file(str(project_root / "app.py"), default_timeout=10).run()
+    app.session_state["search_result"] = {"hits": [{"knowledge_id": "old-workspace"}]}
+    app.session_state["interview_statements"] = [{"segment_id": "old-workspace"}]
+    app.session_state["admin_session_id"] = "old-admin-session"
     password = next(widget for widget in app.text_input if widget.label == "共通パスワード")
     password.input("participant-ui-password")
     next(button for button in app.button if button.label == "ログイン").click()
     app.run()
 
     assert not app.exception
+    assert all(
+        hit["knowledge_id"] != "old-workspace" for hit in app.session_state["search_result"]["hits"]
+    )
+    assert app.session_state.get("interview_statements") is None
+    assert app.session_state.get("admin_session_id") is None
     navigation = next(widget for widget in app.radio if widget.label == "画面")
+    assert list(navigation.options) == [
+        "知識を探す",
+        "エージェントに相談する",
+        "知識を追加・補足する",
+        "更新案・実回答比較",
+    ]
     navigation.set_value("知識を探す")
     app.run()
     assert not app.exception
     assert app.header[0].value == "1. 知識を探す"
     assert app.download_button
     assert any(button.label == "検索する（API不使用）" for button in app.button)
+    assert not any(button.label == "この領域を初期状態へ戻す" for button in app.button)
+    services = _services()
+    workspace_id = app.session_state["workspace_id"]
+    workspace = services.repository.require_workspace(app.session_state["session_id"], workspace_id)
+    assert workspace.seed_mode == "practical_v5"
+    assert len(services.repository.list_knowledge(workspace_id)) == 12
+
+    next(button for button in app.button if button.label == "管理画面を開く").click()
+    app.run()
+    assert not app.exception
+    assert app.header[0].value == "管理"
+    assert any(widget.label == "管理者パスワード" for widget in app.text_input)
+    assert not any(widget.label == "画面" for widget in app.radio)
+    admin_password = next(widget for widget in app.text_input if widget.label == "管理者パスワード")
+    admin_password.input("incorrect-admin-password")
+    next(button for button in app.button if button.label == "管理者として認証").click()
+    app.run()
+    assert not app.exception
+    assert app.session_state.get("admin_session_id") is None
+    assert any("authentication_failed" in error.value for error in app.error)
+    next(button for button in app.button if button.label == "参加者画面へ戻る").click()
+    app.run()
+    assert not app.exception
+    assert app.header[0].value == "1. 知識を探す"
 
     navigation = next(widget for widget in app.radio if widget.label == "画面")
     navigation.set_value("更新案・実回答比較")
@@ -93,8 +138,6 @@ def test_authenticated_navigation_keeps_api_disabled(
         for markdown in app.markdown
         if isinstance(markdown.value, str)
     )
-    services = _services()
-    workspace_id = app.session_state["workspace_id"]
     _, mapping = services.repository.register_source(
         workspace_id,
         title="UIテスト保全記録",
@@ -250,5 +293,16 @@ def test_document_proposal_navigates_after_persisting_once(
     assert len(pending) == 1
     assert pending[0].title == "温度計交換後の出口温度表示"
     assert not any("internal_error" in error.value for error in app.error)
+
+    app.session_state["search_result"] = {"hits": [{"knowledge_id": "expired-workspace"}]}
+    app.session_state["interview_statements"] = [{"segment_id": "expired-workspace"}]
+    services.auth.logout(app.session_state["session_id"])
+    app.run()
+    assert not app.exception
+    assert any("セッションが無効" in error.value for error in app.error)
+    assert app.session_state.get("session_id") is None
+    assert app.session_state.get("workspace_id") is None
+    assert app.session_state.get("search_result") is None
+    assert app.session_state.get("interview_statements") is None
     services.scheduler.stop()
     _services.clear()

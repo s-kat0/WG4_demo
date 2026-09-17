@@ -11,7 +11,7 @@ from wg4_demo.schemas import Role
 from wg4_demo.services import Services, build_services
 from wg4_demo.settings import settings_from_mapping
 from wg4_demo.ui import admin, knowledge, login, qa, register, review
-from wg4_demo.ui.common import PAGES, apply_navigation_request, render_job_status
+from wg4_demo.ui.common import ADMIN_PAGE, PAGES, apply_navigation_request, render_job_status
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -51,8 +51,9 @@ def main() -> None:
         services.auth.require_session(session_id, role=Role.PARTICIPANT)
         workspace = services.repository.require_workspace(session_id, st.session_state.workspace_id)
     except Exception:
-        for key in ["session_id", "workspace_id", "conversation_id", "active_job_id"]:
-            st.session_state.pop(key, None)
+        # Workspace-scoped search, interview, proposal, and admin state must not
+        # survive into the next authenticated session in the same browser tab.
+        st.session_state.clear()
         st.error("セッションが無効です。再ログインしてください。")
         st.stop()
     with st.sidebar:
@@ -75,25 +76,37 @@ def main() -> None:
                 """
             )
         apply_navigation_request()
-        if st.session_state.get("nav_page") not in PAGES:
-            st.session_state.nav_page = PAGES[0]
-        page = st.radio(
-            "画面",
-            PAGES,
-            key="nav_page",
-        )
+        if st.session_state.get("operator_view"):
+            st.caption("運営者用画面を表示しています。参加者の実演操作には使用しません。")
+            if st.button("参加者画面へ戻る"):
+                st.session_state.operator_view = False
+                st.rerun()
+            page = ADMIN_PAGE
+        else:
+            if st.session_state.get("nav_page") not in PAGES:
+                st.session_state.nav_page = PAGES[0]
+            page = st.radio(
+                "画面",
+                PAGES,
+                key="nav_page",
+            )
+            with st.expander("運営者用", expanded=False):
+                st.caption("利用状況の確認、LLM要求の停止・再開を行う管理者専用画面です。")
+                if st.button("管理画面を開く"):
+                    st.session_state.operator_view = True
+                    st.rerun()
         if st.button("ログアウト"):
             services.auth.logout(session_id)
             st.session_state.clear()
             st.rerun()
     render_job_status(services)
     if page == "知識を探す":
-        knowledge.render(services, PROJECT_ROOT)
+        knowledge.render(services)
     elif page == "エージェントに相談する":
         qa.render(services, PROJECT_ROOT)
     elif page == "知識を追加・補足する":
         register.render(services, PROJECT_ROOT)
     elif page == "更新案・実回答比較":
         review.render(services, PROJECT_ROOT)
-    else:
+    elif page == ADMIN_PAGE:
         admin.render(services)

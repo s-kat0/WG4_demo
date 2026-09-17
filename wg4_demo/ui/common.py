@@ -16,8 +16,8 @@ PAGES = (
     "エージェントに相談する",
     "知識を追加・補足する",
     "更新案・実回答比較",
-    "管理",
 )
+ADMIN_PAGE = "管理"
 _REQUESTED_PAGE_KEY = "_requested_nav_page"
 
 
@@ -29,6 +29,7 @@ def apply_navigation_request() -> None:
     if requested not in PAGES:
         raise ValueError("invalid navigation request")
     st.session_state.nav_page = requested
+    st.session_state.operator_view = False
 
 
 def navigate_to(page: str) -> None:

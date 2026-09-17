@@ -1,6 +1,6 @@
 # WG4講演デモ v5 現行実装ハンドオフ
 
-- 更新日: 2026-09-16
+- 更新日: 2026-09-17
 - 対象: Python 3.12 / Streamlit / OpenAI Responses API・Agents SDK / SQLite
 - fixture: `wg4-practical-seed-v5`
 - QA・抽出等のprompt: `wg4-prompts-v13` / interview prompt: `wg4-interview-v2`
@@ -29,6 +29,7 @@
 - 候補相談、理由説明、原文確認、条件比較。通常の候補相談は検索1位を優先し、「この知識について相談する」の明示選択ターンだけ選択項目を優先
 - 文書版A、本人役補足版B、校正条件版Cの実回答snapshotと設定比較
 - 主画面を「知識を探す」「エージェントに相談する」「知識を追加・補足する」「更新案・実回答比較」へ整理
+- Cloud参加者ログインは`practical_v5`へ一本化。旧開始モードと領域初期化はUIから外し、管理画面は折りたたんだ運営者用入口へ分離
 
 既存の認証、workspace分離、Approval、版管理、Gateway、利用台帳、FIFOキュー、取消、timeout、遅着破棄、fallback禁止は再設計せず維持している。
 
@@ -145,14 +146,16 @@ job mode:
 
 ## 9. UI入口
 
+- 参加者ログイン: 共通パスワードだけを入力し、新規`practical_v5` workspaceを作る。開始モード選択は表示しない
 - `知識を探す`: 非課金、初期12件から利用可
 - `エージェントに相談する`: 初期12件から利用可、追質問可
 - `知識を追加・補足する`: 文書→A→聞き取り補足
 - `更新案・実回答比較`: pending承認、B/C実行、A/B/Cの根拠差
-- `管理`: 利用回数の監視・停止。`finite`互換モードでは有限call枠の追加
+- `運営者用`: 主ナビゲーション外の折りたたみ入口。別パスワードで利用回数の監視・停止を行い、`finite`互換モードでは有限call枠を追加
 
 各画面の展開説明は次の操作を示す。待機中、前件数、実行中、完了、失敗を区別し、再送を促さない。
 聞き取りでは、LLM生成の追加質問と固定収録の本人役回答例を明示的に区別する。`InterviewQuestion`はask/completeとtopicを返し、既出topic・同一質問は保存前に拒否する。固定回答例は理由用・適用範囲用を各一度だけ自動入力する。
+JSON保存とログアウトは維持するが、参加者による領域初期化は表示しない。`from_scratch` / `approved_v1`の作成・初期化処理は旧workspaceと回帰試験の内部互換性として残し、新規Cloud利用の導線には使わない。
 
 ## 10. 主要コード
 
@@ -169,7 +172,7 @@ job mode:
 | `wg4_demo/tools.py` | search/get_context/read_evidence/propose_update |
 | `wg4_demo/result_validation.py` | intent、順位、focus、fact、evidence検証 |
 | `wg4_demo/jobs.py` / `scheduler.py` | FIFO、重複、owner、取消、timeout、worker制限 |
-| `wg4_demo/ui/` | 5つの参加者・管理画面 |
+| `wg4_demo/ui/` | 4つの参加者画面と、分離した運営者用画面 |
 
 ## 11. 検証
 

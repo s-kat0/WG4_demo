@@ -98,6 +98,8 @@ pytestのskip 1件は、`RUN_LIVE_TESTS=1`が明示されていない既存live 
 | 校正条件の更新案 | 11.271 |
 | 回答C | 10.709 |
 
+その後、聞き取りの質問トピック・完了判定・重複防止、Cloud参加者UI整理、再認証時のsession state破棄を反映した現行コードで、同じモデル・reasoning `medium`・最大30 call・同時実行1・SDK retry 0のv5 fullを新規実行し、成功した。所要67.889秒、21 calls、入力78,677 tokens、出力4,048 tokens。最終知識は13件、対象はv3、A/B/C snapshotは全て保存され、各回答で`search_knowledge`、`get_context`、`read_evidence`を実行した。別モデル、固定回答、自動再送は使用していない。
+
 過去にprompt v12・旧v3フローで`gpt-5.6-luna`、reasoning `low`のローカル実API検証が成功しているが、その47.5秒・20 calls等をv5の実績へ流用しない。
 
 ## Cloud・実画面
@@ -119,5 +121,5 @@ v5 fullの実API処理は成功したが、スライド用の実ブラウザ画�
 - 決定的検索はbigramと小規模語彙規則であり、意味検索ではない
 - 会話の仮定・訂正・設備切替は明示語に基づく。曖昧な発言は確認が必要
 - SQLite単一プロセス前提で、Cloud再起動をまたぐ完遂・永続性・複数replicaを保証しない
-- v5 full実APIは1回成功したが、複数回の再現性、Cloud環境、約30人の実API同時利用は未確認
+- 現行コードのv5 full実APIは1回成功したが、同一revisionでの複数回再現性、Cloud環境、約30人の実API同時利用は未確認
 - AppTest・mock成功をCloud公開成功、実API品質、実務上の安全性として扱わない

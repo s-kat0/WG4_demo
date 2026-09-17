@@ -24,6 +24,7 @@ from wg4_demo.schemas import (
     OperationType,
     ProposalOperation,
     RemoveFactToolOperation,
+    SearchHit,
     ToolProposalOperation,
 )
 
@@ -79,7 +80,35 @@ async def search_knowledge(
         runtime.workspace_id, query, equipment_name=equipment_name
     )
     runtime.trace.search_result = result
-    return result.model_dump_json()
+    visible_hits: list[SearchHit] = []
+    focused = [hit for hit in result.hits if hit.knowledge_id in runtime.focus_knowledge_ids]
+    for hit in [*focused, *result.hits]:
+        if any(existing.knowledge_id == hit.knowledge_id for existing in visible_hits):
+            continue
+        visible_hits.append(hit)
+        if len(visible_hits) == 3:
+            break
+    return canonical_json(
+        {
+            "status": "success",
+            "kb_revision": result.kb_revision,
+            "hits": [
+                {
+                    "knowledge_id": hit.knowledge_id,
+                    "display_name": hit.display_name,
+                    "title": hit.title,
+                    "version": hit.version,
+                    "equipment": hit.equipment,
+                    "case_label": hit.case_label,
+                    "source_kind": hit.source_kind,
+                    "origin_label": hit.origin_label,
+                    "score": hit.score,
+                    "condition_matches": hit.condition_matches,
+                }
+                for hit in visible_hits
+            ],
+        }
+    )
 
 
 @function_tool(
@@ -105,7 +134,7 @@ async def get_context(
             "knowledge_id": result.knowledge_id,
             "version": result.version,
             "facts": result.facts,
-            "nodes": result.nodes,
+            "nodes": [{"id": node["id"], "type": node["type"]} for node in result.nodes],
             "edges": result.edges,
         }
     )

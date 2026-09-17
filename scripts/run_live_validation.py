@@ -358,8 +358,8 @@ def consult_v5(services: Services, session_id: str) -> dict[str, Any]:
     required_tools = {"search_knowledge", "get_context", "read_evidence"}
     if not required_tools.issubset(set(answer["tools"])):
         raise RuntimeError("v5 consultation did not execute all required retrieval tools")
-    if selection["status"] not in {"candidates", "needs_clarification"}:
-        raise RuntimeError("v5 consultation returned an unexpected answer status")
+    if selection["status"] != "candidates" or not selection["candidates"]:
+        raise RuntimeError("v5 consultation did not return a grounded candidate")
     return {
         "question": question,
         "qa_seconds": round(qa_seconds, 3),

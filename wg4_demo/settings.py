@@ -30,7 +30,7 @@ class Settings(BaseModel):
     call_budget_mode: Literal["finite", "provider_hard_limit"] = "provider_hard_limit"
     app_max_llm_calls: int = Field(default=600, ge=1)
     session_max_llm_calls: int = Field(default=40, ge=1)
-    max_model_calls_per_action: int = Field(default=12, ge=1, le=20)
+    max_model_calls_per_action: int = Field(default=12, ge=1, le=33)
     max_tool_calls_per_action: int = Field(default=8, ge=1, le=32)
     max_concurrent_jobs: int = Field(default=3, ge=1, le=10)
     max_pending_jobs: int = Field(default=30, ge=1, le=100)
@@ -43,8 +43,8 @@ class Settings(BaseModel):
     global_tpm: int | None = Field(default=None, ge=1)
     max_input_chars: int = Field(default=1500, ge=1)
     max_document_chars: int = Field(default=6000, ge=1)
-    max_prompt_bytes: int = Field(default=64000, ge=1024)
-    max_estimated_input_tokens: int = Field(default=16000, ge=1)
+    max_prompt_bytes: int = Field(default=262144, ge=1024)
+    max_estimated_input_tokens: int = Field(default=65536, ge=1)
     max_output_tokens: int = Field(default=2048, ge=1)
     request_timeout_seconds: int = Field(default=35, ge=1)
     workspace_ttl_hours: int = Field(default=24, ge=1)
@@ -90,6 +90,12 @@ class Settings(BaseModel):
             == self.admin_password_hash.get_secret_value()
         ):
             raise ValueError("participant and admin password hashes must differ")
+        return self
+
+    @model_validator(mode="after")
+    def validate_agent_call_budget(self) -> Settings:
+        if self.max_model_calls_per_action <= self.max_tool_calls_per_action:
+            raise ValueError("MAX_MODEL_CALLS_PER_ACTION must exceed MAX_TOOL_CALLS_PER_ACTION")
         return self
 
     @property
@@ -160,8 +166,8 @@ def settings_from_mapping(
         "GLOBAL_RPM": 60,
         "MAX_INPUT_CHARS": 1500,
         "MAX_DOCUMENT_CHARS": 6000,
-        "MAX_PROMPT_BYTES": 64000,
-        "MAX_ESTIMATED_INPUT_TOKENS": 16000,
+        "MAX_PROMPT_BYTES": 262144,
+        "MAX_ESTIMATED_INPUT_TOKENS": 65536,
         "MAX_OUTPUT_TOKENS": 2048,
         "REQUEST_TIMEOUT_SECONDS": 35,
         "WORKSPACE_TTL_HOURS": 24,

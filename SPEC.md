@@ -604,7 +604,7 @@ clarification_requestsには質問文と、関連する不足条件ID（未定�
 - 全ての呼出しで`store=False`を明示する。
 - 外部トレーシングは最初の実行前から無効化する。
 - OpenAIクライアントの自動retryは`max_retries=0`。SDKの別のretry機構も有効化しない。
-- 一操作のmodel call予算は最大12回、ツール最大8回、生成上限2048 tokensを初期値とする。Agents SDKの1 turnは1回のmodel callであり、`parallel_tool_calls=False`のため、検索、最大3候補のグラフ探索・原文取得、最終構造化出力を順番に行う正常経路が6 turnを超える場合がある。ツール上限に達した後は追加のツール呼出しを拒否するため、model call予算を無制限にはしない。
+- 一操作のmodel call予算は最大12回、ツール最大8回、生成上限2048 tokensを初期値とする。Agents SDKの1 turnは1回のmodel callであり、`parallel_tool_calls=False`のため、検索、最大3候補のグラフ探索・原文取得、最終構造化出力を順番に行う正常経路が6 turnを超える場合がある。model call上限はtool call上限より大きい値を必須とし、最終回答の1 turnを確保する。ツール上限に達した後は追加のツール呼出しを拒否するため、model call予算を無制限にはしない。
 - `parallel_tool_calls=False`。複数APIの無制限並列実行をしない。
 - SDKの`max_turns`だけに頼らず、実リクエスト直前のゲートで回数を数える。
 - ツール未使用で一般知識だけの候補を返した場合、根拠付き回答として受理しない。
@@ -817,8 +817,8 @@ OpenAI Agents SDKの関数ツールは、既定では例外をLLM向けのエラ
 | `SESSION_ACTION_COOLDOWN_SECONDS` | 2 | 同じsessionの有料操作間隔 |
 | `MAX_INPUT_CHARS` | 1500 | 一回の自由入力 |
 | `MAX_DOCUMENT_CHARS` | 6000 | 一回の架空文書入力 |
-| `MAX_PROMPT_BYTES` | 64000 | ツール定義・履歴・根拠を含む送信本文のUTF-8上限 |
-| `MAX_ESTIMATED_INPUT_TOKENS` | 16000 | 推定値の上限。プロトコル分の余裕を含める |
+| `MAX_PROMPT_BYTES` | 262144 | ツール定義・履歴・根拠を含む送信本文のUTF-8上限 |
+| `MAX_ESTIMATED_INPUT_TOKENS` | 65536 | 推定値の上限。`gpt-5.6-luna`のcontext windowより十分小さく、プロトコルと累積tool resultの余裕を含める |
 | `MAX_OUTPUT_TOKENS` | 2048 | 実APIへ送る出力上限 |
 | `REQUEST_TIMEOUT_SECONDS` | 35 | 一回のAPI要求 |
 | `QUEUE_WAIT_TIMEOUT_SECONDS` | 300 | 受付から実行開始まで。API送信なしで期限切れにする |

@@ -171,13 +171,24 @@ def _render_comparison_controls(
         return
     by_stage = {snapshot.stage: snapshot for snapshot in snapshots}
     expected_stage = "A" if item.version == 1 else "B" if item.version == 2 else "C"
-    if expected_stage in by_stage:
+    existing = by_stage.get(expected_stage)
+    if existing is not None and existing.state == "succeeded":
         return
     st.subheader(f"比較回答{expected_stage}を実行")
     st.write(demo["comparison_question"])
     st.caption("同じ質問・モデル・prompt・検索設定を使い、毎回新しい空のQA会話で実行します。")
+    if existing is not None:
+        st.warning(
+            f"前回の回答{expected_stage}は{existing.safe_error_code or 'unknown_error'}で失敗しました。"
+            "下のボタンは自動再送ではなく、利用者が開始する新しい操作です。"
+        )
+    button_label = (
+        f"新しい操作として回答{expected_stage}を再実行（APIを使用）"
+        if existing is not None
+        else f"空の会話で回答{expected_stage}を実行（APIを使用）"
+    )
     if st.button(
-        f"空の会話で回答{expected_stage}を実行（APIを使用）",
+        button_label,
         disabled=active_job_exists(services) or has_pending,
         key=f"run-comparison-{expected_stage}",
     ):

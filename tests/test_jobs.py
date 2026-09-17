@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 import time
 
@@ -216,3 +217,45 @@ def test_stale_queued_job_is_terminal_and_scheduler_continues(
     finally:
         scheduler.stop()
     assert seen == [fresh.job_id]
+
+
+def test_unexpected_worker_failure_logs_safe_diagnostics_only(
+    settings: Settings,
+    auth: AuthService,
+    repository: Repository,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    session = auth.login(
+        "participant-secret", role=Role.PARTICIPANT, client_token="unexpected-failure"
+    )
+    workspace = repository.create_workspace(session.id, seed_mode="from_scratch")
+    jobs = JobService(settings.control_db_path, settings, auth, repository)
+    job = enqueue_job(jobs, repository, session.id, workspace.id, dedupe_key="unexpected-failure")
+    secret_canary = "FAKE_SECRET_MUST_NOT_BE_LOGGED"
+
+    def handler(_job):
+        raise RuntimeError(secret_canary)
+
+    caplog.set_level(logging.ERROR, logger="wg4_demo.scheduler")
+    scheduler = Scheduler(jobs, repository, {"fake": handler}, max_workers=1)
+    scheduler.start()
+    try:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            result = jobs.get(session_id=session.id, job_id=job.job_id)
+            if result.state is JobState.FAILED:
+                break
+            time.sleep(0.02)
+    finally:
+        scheduler.stop()
+
+    result = jobs.get(session_id=session.id, job_id=job.job_id)
+    assert result.state is JobState.FAILED
+    assert result.safe_error_code == "internal_error"
+    log_text = caplog.text
+    assert job.job_id in log_text
+    assert job.action_id in log_text
+    assert "RuntimeError" in log_text
+    assert "test_jobs.py" in log_text
+    assert "handler" in log_text
+    assert secret_canary not in log_text

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import threading
+import traceback
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
+from pathlib import Path
 
 from wg4_demo.errors import AppError
 from wg4_demo.jobs import JobRecord, JobService
@@ -13,6 +16,16 @@ from wg4_demo.repository import Repository
 from wg4_demo.schemas import JobState
 
 JobHandler = Callable[[JobRecord], tuple[str, dict[str, object]]]
+logger = logging.getLogger(__name__)
+
+
+def _safe_trace_location(exc: BaseException) -> str:
+    """Return code locations only; never log exception messages or local values."""
+
+    frames = traceback.extract_tb(exc.__traceback__)
+    return " > ".join(
+        f"{Path(frame.filename).name}:{frame.lineno}:{frame.name}" for frame in frames[-6:]
+    )
 
 
 class Scheduler:
@@ -113,7 +126,16 @@ class Scheduler:
                 safe_error_code=exc.code,
                 failure_stage=exc.stage,
             )
-        except BaseException:
+        except BaseException as exc:
+            logger.error(
+                "Unhandled scheduler failure job_id=%s action_id=%s mode=%s "
+                "exception_type=%s trace=%s",
+                job.job_id,
+                job.action_id,
+                job.mode,
+                type(exc).__name__,
+                _safe_trace_location(exc),
+            )
             self.jobs.fail(
                 job,
                 state=JobState.FAILED,

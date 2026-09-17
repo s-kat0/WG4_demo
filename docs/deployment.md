@@ -1,5 +1,7 @@
 # Streamlit Community Cloud デプロイ
 
+参加者へ案内する資料は[participant_guide.md](participant_guide.md)、講演者が登壇中に使う資料は[demo_quick_guide.md](demo_quick_guide.md)。この文書はデプロイ担当者向けであり、Secretsの実値を参加者資料やIssueへ転記しない。
+
 ## 運営者の事前作業
 
 1. 専用OpenAIプロジェクトと、Responses呼出しに限定したキーを作る。
@@ -44,3 +46,12 @@ git ls-files
 - 実在するURLとdeploy commitだけを記録
 
 Cloud再起動後も有限call枠の追加操作は不要。ただし公開前と障害復旧時にはOpenAI側の利用量とhard limitを確認する。管理者またはprovider上限エラーによって停止した場合は、hard limit確認後に管理画面から明示的に再開する。
+
+## 公開直後の短縮確認
+
+1. 未認証の独立ブラウザで、説明、注意書き、共通パスワード欄だけが見えることを確認する。
+2. 参加者としてログインし、知識12件、文書6件、Q&A 6件、設備3件を確認する。
+3. `冷却器1 流量低下`を通常検索し、文書とQ&Aの原文を開く。この操作ではAPIを呼ばない。
+4. 既定の出口温度質問を1回実行し、根拠とツール履歴が表示されることを確認する。
+5. 管理画面で利用回数、active数、失敗状態を確認し、Secretsが画面やログへ出ていないことを確認する。
+6. 主シナリオ全体は[participant_guide.md](participant_guide.md)の期待結果と照合する。

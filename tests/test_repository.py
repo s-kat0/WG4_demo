@@ -183,6 +183,11 @@ def test_unapproved_source_stays_out_until_atomic_approval(
     )
     assert duplicate.already_applied is True
     assert repository.get_knowledge(workspace_id, item3.id).version == 2
+    historical = repository.get_knowledge(workspace_id, item3.id, 1)
+    assert historical.version == 1
+    assert all(
+        fact.condition_scope is not ConditionScope.ACTION_PREREQUISITE for fact in historical.facts
+    )
 
     with pytest.raises(ValidationFailure, match="proposal_stale"):
         repository.approve_proposal(

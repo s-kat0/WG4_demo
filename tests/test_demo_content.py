@@ -29,6 +29,8 @@ def test_extraction_prompt_requires_concise_grounded_fact_text() -> None:
 
     assert "原文をそのまま分割・転記せず" in prompt
     assert "原則30文字以内" in prompt
+    assert "missing_fieldsへ明示" in prompt
+    assert "decision_reason、exception、cause_hypothesisは出力せず" in prompt
     assert "未確定の内容を確定表現に変えたりしてはいけません" in prompt
     assert "kindがconditionのfactにはcondition_scopeを必ず設定" in prompt
     assert "kindがcondition以外のfactではcondition_scopeをnull" in prompt
@@ -44,3 +46,11 @@ def test_interview_prompt_supports_completion_and_forbids_repeated_topics() -> N
     assert "すでに使ったtopic" in prompt
     assert "statusをcomplete" in prompt
     assert "質問を続けるためだけの言い換え" in prompt
+
+
+def test_answer_prompt_requires_exact_read_evidence_set() -> None:
+    prompt = (PROJECT_ROOT / "prompts" / "answer.md").read_text("utf-8")
+
+    assert "最終回答で使うaction_fact_id" in prompt
+    assert "成功したread_evidenceへ実際に渡したIDだけ" in prompt
+    assert "未読の根拠IDを最終回答へ足してはいけません" in prompt

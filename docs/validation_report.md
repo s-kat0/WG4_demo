@@ -1,135 +1,131 @@
 # 検証報告
 
-更新日: 2026-09-17
+更新日：2026年9月17日
 
 ## 対象
 
-- fixture: `wg4-practical-seed-v5`
-- prompt: `wg4-prompts-v13`
-- domain schema: `2` / 公開schema表記: `wg4-schema-v2`
-- 主シナリオ: 初期12件 → 文書版A → 本人役補足版B → 校正条件版C
+- code commit：496b35d
+- branch：fix/participant-guide-verification-issues
+- fixture：wg4-practical-seed-v5
+- model：gpt-5.6-luna
+- reasoning：medium
+- QA・抽出・補足・更新prompt：wg4-prompts-v15
+- interview prompt：wg4-interview-v2
+- domain schema：2
+
+この報告は、仕様、mock／非課金検査、ローカル実API、Streamlit Cloudの確認を区別する。古いpromptや旧フローの成功結果を現行版の成功として流用しない。
+
+## 結論
+
+現行コードでは、参加者向けガイドの主経路をローカルの実ブラウザと実OpenAI APIで完了できた。
+
+- 初期12件の通常検索
+- 根拠付き相談と理由・別条件の追質問
+- 文書抽出と文書版v1の承認
+- 空履歴の回答A
+- 本人役への異なる追加質問と対話補足版v2の承認
+- 空履歴の回答BとA/B比較
+- 校正条件の更新案とv3の承認
+- 空履歴の回答CとB/C比較
+- 新しい会話で現行v3と追加原文を取得
+
+A/B/Cはそれぞれ対象v1/v2/v3を保持し、別モデル、固定回答、過去回答、自動再送は使用しなかった。
 
 ## 固定環境
 
-- Python 3.12.10
-- uv 0.11.19
-- Streamlit 1.64.0
-- openai 3.14.1
-- openai-agents 0.22.2
-- Pydantic 2.13.5
-- NetworkX 3.6.1
+| 項目 | バージョン |
+|---|---|
+| Python | 3.12.10 |
+| uv | 0.11.19 |
+| Streamlit | 1.64.0 |
+| openai | 3.14.1 |
+| openai-agents | 0.22.2 |
+| Pydantic | 2.13.5 |
+| NetworkX | 3.6.1 |
 
-## v5非課金検証
-
-2026-09-17にロック済み環境で再実行した。
+## 非課金検証
 
 | コマンド | 結果 |
 |---|---|
-| `uv sync --locked` | 成功（116 packages resolved、110 checked） |
-| `uv run --locked pytest` | 72 passed、1 skipped |
-| `uv run --locked ruff check .` | 成功 |
-| `uv run --locked ruff format --check .` | 成功（78 files already formatted） |
-| `uv run --locked mypy wg4_demo scripts` | 成功（39 source files） |
-| `uv run --locked pip-audit` | 既知脆弱性0件 |
-| `uv run --locked python scripts/check_repository_safety.py` | 成功（96 tracked or addable files） |
-| `uv run --locked python scripts/run_load_test.py --sessions 30` | 30完了、0失敗、最大同時3、median 1.2045秒、p95 1.5614秒、外部API 0 |
-| `uv run --locked pytest --cov=wg4_demo --cov-report=term-missing:skip-covered` | 72 passed、1 skipped、総合74% |
+| uv sync --locked | 成功。116 packages resolved、110 checked |
+| uv run --locked pytest | 81 passed、1 skipped |
+| uv run --locked ruff check . | 成功 |
+| uv run --locked ruff format --check . | 成功。82 files already formatted |
+| uv run --locked mypy wg4_demo | 成功。34 source files |
+| uv run --locked python scripts/check_repository_safety.py | 成功 |
+| uv run --locked python scripts/run_load_test.py --sessions 30 | 30完了、0失敗、外部API 0 |
 
-pytestのskip 1件は、`RUN_LIVE_TESTS=1`が明示されていない既存live gate。通常テストは外部APIを呼んでいない。
+pytestのskip 1件は、RUN_LIVE_TESTS=1を明示していないlive gateである。通常テストは外部APIを呼んでいない。
 
-### 確認したv5項目
+### 30セッション模擬キュー
 
-- 初期KnowledgeItem 12件、文書6/Q&A6、12 source、35 segment、41 fact
-- 全factのquoteが原文の部分文字列で、assistant質問をfact根拠にしないこと
-- 破損quoteのseedをtransaction全体で拒否すること
-- 旧workspaceへv5 seedを追加せず、schema v1 workspaceを追加型migrationで保持すること
-- 代表検索5件、設備・由来filter、正常0件と検索例外の型分離
-- 画面閲覧・通常検索でKB revisionが変わらないこと
-- 文書版を動的な新規itemとして承認し、本人役補足を同一itemの新版にすること
-- pending中は新segmentとdecision reasonが通常検索・原文取得へ入らないこと
-- 仮定と実状の分離、明示訂正、別設備への話題変更、曖昧な`それ`の事前確認
-- 理由追質問では検索1位を一律強制せず、focus、取得版、fact、原文は引き続き検証すること
-- A/B/C snapshotが実payloadまたは失敗コードを保持し、空欄を模範回答で埋めないこと
-- mock structured gatewayを通した聞き取り補足Proposalがstagedのままで、承認前の知識を変えないこと
-- AppTestで未認証面、v5ログイン、非課金検索、画面遷移、pendingレビューを確認
-- Cloud参加者UIに旧デモ互換・空の領域・領域初期化がなく、ログイン後は初期12件の`practical_v5`になること
-- 主ナビゲーションが四画面だけで、運営者用画面が折りたたみ入口と別パスワードに分離されること
-- ログイン成功時と無効セッション検出時に旧workspaceの検索・聞き取り・管理画面状態を破棄し、管理者パスワードフォームを送信後クリアすること
-- 30のv5 workspaceが各12件を持ち、knowledge IDが相互に重ならず、最大worker 3を超えないこと
-- API timeoutの自動再送なし、structured output不正の自動修復なし、重複jobの二重受付なし
-- `APP_LLM_ENABLED=false`では、台帳に枠があってもAPI予約を作らない実行時gate
-- 待機中にKB改訂が変わったjobを`stale_context`で終了し、schedulerが後続jobを継続すること
-- 同じ文書抽出操作から同一Proposalを再利用し、二重pendingを作らないこと
-- 競合する旧版Proposalを承認せず、`stale`状態をrollbackせず保持すること
-- `from_scratch`の新規作成・初期化が実際に空で、旧seedを混入させないこと
-- APIキー、パスワード、Secrets、runtime DBがexportや安全な例外に含まれないこと
-
-## mockでのみ確認した項目
-
-- 文書抽出、追加質問、本人役補足、Agent回答、更新案のLLM境界
-- API例外、timeout、不正structured output、SDK tool例外の伝播
-- 30 session共有キュー。fake handlerの遅延を使用し、外部APIは0 call
-- v5 A/B/Cの異常系、未承認遮断、失敗snapshot保存
-
-## 実API
-
-2026-09-17に`gpt-5.6-luna`、reasoning `low`、最大30 call、同時実行1、SDK retry 0の条件で、v5 full検証を1回実行した。最初の文書抽出APIは完了したが、結果をDBのJSON payloadから`KnowledgeDraft`へ戻す箇所がPydanticのPython strict modeで正当なenum文字列を拒否し、`ValidationError`で停止した。固定結果や別モデルへ切り替えず、A/B/Cの後続処理と自動再送は行っていない。
-
-原因箇所は、保存JSONをJSON modeで厳格検証するよう修正した。同じ復元処理を使うStreamlit文書登録画面も修正し、JSON round-trip回帰テストを追加した。修正後の非課金テスト・静的検査・30 session負荷試験は成功している。
-
-同日に修正後のv5 full検証を別の新規実行として1回実施した。文書抽出と対象事例v1の承認までは完了したが、比較Aで`validation_top_candidate_missing`となり停止した。比較処理が知識項目13を明示選択していた一方、検証器が通常候補検索の検索1位を常に要求していたためである。固定候補への置換や後続B/C、自動再送は行っていない。
-
-明示的な「この知識について相談する」から開始した現在の1ターンだけ、取得済みの選択項目を第1候補として検証するよう修正した。通常の候補検索では検索1位規則を維持し、版・fact・原文・workspaceの検証も変更していない。2回目の修正後のv5 full実API検証はまだ行っていないため、A/B/Cの実API成功、所要時間、call数、token量は未確認。今後の失敗時には一時台帳を削除する前に、安全なcall数とtoken数を出力するようlive検証スクリプトを更新した。
-
-同日に上記修正後のv5 fullを新規実行したが、最初の抽出が原文にある必須fact種別を一つ省略したため停止した。使用量は1 call、入力803 tokens、出力263 tokens、4.776秒。再送は行っていない。`gpt-5.6-luna`は維持し、講演用の推奨推論強度を`medium`へ変更した。抽出promptには、原文に明示された異なるkindを統合せず、観察・事例条件・確認行動を種類別に漏れなく対応付ける一般則を追加した。`medium`でのv5 full実API検証は未実施であり、A/B/Cの実API成功はまだ確認していない。
-
-`medium`での次の新規実行は、文書抽出・v1承認・比較Aまでは進み、最初の追加質問が「理由」「なぜ」「考え」の語を含まなかったためliveスクリプトの固定語判定で停止した。使用量は6 calls、入力14,965 tokens、出力1,145 tokens、21.532秒。質問内容のschema違反や根拠違反ではなかった。この表層語判定は、二往復程度を目安とし質問順序・文言を固定しないv5仕様と矛盾するため削除した。代わりに、補足承認後のv2が本人回答を根拠とする`decision_reason`と`applicability`または`exception`を実際に保持することを検証する。併せて、A/B/Cを実画面から起動する経路にも明示選択マーカーを追加した。修正後の実API A/B/C通過は未確認。
-
-上記修正後、同じ`gpt-5.6-luna`、reasoning `medium`、最大30 call、同時実行1、SDK retry 0で新規のv5 full検証を実施し、成功した。所要65.750秒、21 calls、入力79,193 tokens、出力4,217 tokens。初期12件に動的対象1件を加えた13件を保持し、対象は文書版v1、本人役補足版v2、校正条件版v3へ更新された。A/B/C snapshotはすべて保存され、各回答で`search_knowledge`、`get_context`、`read_evidence`を実行した。
-
-| 段階 | 秒 |
+| 指標 | 結果 |
 |---|---:|
-| 文書抽出 | 6.488 |
-| 回答A | 15.174 |
-| 理由の追加質問 | 2.742 |
-| 適用範囲の追加質問 | 1.962 |
-| 本人役補足案 | 7.321 |
-| 回答B | 9.791 |
-| 校正条件の更新案 | 11.271 |
-| 回答C | 10.709 |
+| 独立session／workspace／conversation | 30 |
+| 完了 | 30 |
+| 失敗 | 0 |
+| 観測最大同時実行数 | 3 |
+| median | 1.4874秒 |
+| p95 | 1.9403秒 |
+| max | 2.0611秒 |
+| workspaceごとの初期知識 | 12件 |
+| knowledge IDのworkspace間重複 | なし |
+| 外部API呼び出し | 0 |
 
-その後、聞き取りの質問トピック・完了判定・重複防止、Cloud参加者UI整理、再認証時のsession state破棄を反映した現行コードで、同じモデル・reasoning `medium`・最大30 call・同時実行1・SDK retry 0のv5 fullを新規実行し、成功した。所要67.889秒、21 calls、入力78,677 tokens、出力4,048 tokens。最終知識は13件、対象はv3、A/B/C snapshotは全て保存され、各回答で`search_knowledge`、`get_context`、`read_evidence`を実行した。別モデル、固定回答、自動再送は使用していない。
+これはキュー、同時実行制限、所有権、workspace分離のmock試験であり、Cloud上の30人実API性能試験ではない。
 
-過去にprompt v12・旧v3フローで`gpt-5.6-luna`、reasoning `low`のローカル実API検証が成功しているが、その47.5秒・20 calls等をv5の実績へ流用しない。
+## ローカル実ブラウザ・実API
 
-## Cloud・実画面
+.envの参加者設定をサーバー側で読み、平文パスワードやAPIキーを画面・出力へ表示せず、新規の練習領域で確認した。
 
-Streamlit Community Cloudの公開URL `https://wg4-demo-kato.streamlit.app/`へdeployし、Cloud Secrets設定後の参加者ログイン成功は運営者が確認した。初回の「現行知識を調べて相談する」は`agent_turn_limit`で失敗し、代替回答は表示されなかった。
+### 初期検索と相談
 
-原因は、`parallel_tool_calls=False`で検索、複数候補のグラフ、原文を直列取得する一方、一操作のmodel call上限が6、tool call上限が8で、正常経路の最終回答前にmodel turnが尽き得る不整合だった。model call予算を12へ変更し、同じ引数のツール反復を禁止して、必要な原文IDの一括取得と根拠取得後の終了をpromptに明記した。tool call上限8、timeout、RPM/TPM、SDK retry 0、provider hard limitは維持した。
+| 操作 | 確認結果 |
+|---|---|
+| ログイン | 12 KnowledgeItem、文書6、Q&A 6、設備3、KB改訂1 |
+| 冷却器1 流量低下 | 8件。文書とQ&Aの両方の原文を確認 |
+| 出口温度表示の初回相談 | 知識項目1 v1と原文、ツール実行履歴を表示 |
+| なぜこの確認が候補になるのですか | reason_explanation。本人の判断理由が未記録であることを明示 |
+| 流量が下がっていた場合も... | condition_comparison。通常条件と流量低下時の知識を分けて表示 |
 
-修正後、公開画面と同じ初期12件と既定質問を使い、`gpt-5.6-luna`、reasoning `medium`で新規の実API検証を1回実施した。15.249秒、4 calls、入力13,179 tokens、出力523 tokensで成功し、`search_knowledge`→`get_context`→`read_evidence`後に候補1件を返した。別モデル、自動再送、固定回答は使用していない。Cloudへの修正反映後の再確認とCloud 30 session実機試験は未実施。
+### 文書・対話・A/B/C
 
-その後の新規実API確認は、7 calls、入力42,230 tokens、出力660 tokensの後、8回目の送信前検査で`prompt_too_large`となり停止した。自動再送は行っていない。Cloudでも運営者が同エラーを確認した。原因は、モデルのcontext windowではなく、アプリ固有の推定入力上限16,000 tokensと64,000 bytesが、複数候補の直列ツール結果を累積する正常経路に対して小さすぎたことだった。入力上限を65,536 tokensと262,144 bytesへ変更し、モデルへ返す検索候補を最大3件へ制限し、グラフnodeの原文label重複を除去した。提示候補は原則1件、比較でも最大2件とした。
+| 段階 | 確認結果 |
+|---|---|
+| 文書抽出 | 条件、観察、確認行動、原因未特定を分離。原因・判断理由・適用範囲・確認結果は未確認 |
+| v1／回答A | KB改訂2。回答Aはsucceeded／対象v1、由来document、空履歴True |
+| 本人役への聞き取り | 判断理由と適用範囲について異なる質問を生成。固定回答例はLLM生成でないと表示し、2回答後に自動挿入を停止 |
+| v2／回答B | KB改訂3。回答Bはsucceeded／対象v2、由来mixed、本人役の理由・条件・原文を参照 |
+| v3／回答C | KB改訂4。校正確認をaction_prerequisiteとして追加。回答Cはsucceeded／対象v3、聞き取り記録2を参照 |
+| 履歴表示 | A=v1、B=v2、C=v3を保持。すべてprompt wg4-prompts-v15、空履歴True |
+| 新しい会話 | 会話IDと履歴だけが変わり、KB改訂4と承認済みv3を保持。比較と同じ条件を最初に入力してv3を取得 |
 
-上記修正後の同一revisionで、初期12件と既定質問の実API検証を独立に2回実施し、両方成功した。どちらも4 callsで`search_knowledge`→`get_context`→`read_evidence`を実行し、候補1件を返した。1回目は9.595秒、入力10,003 tokens、出力452 tokens、2回目は10.131秒、入力9,976 tokens、出力491 tokens。別モデル、自動再送、固定回答は使用していない。Cloud Secretsとdeploy revisionへの反映後の実画面再確認は未実施。
+各根拠付き回答でsearch_knowledge、get_context、read_evidenceが表示された。回答Bで以前確認されたvalidation_unread_evidenceは、prompt v15の通し確認では再発しなかった。
 
-さらに同じrevision、`gpt-5.6-luna`、reasoning `medium`、最大30 callsの明示的なlive gateでv5 fullを再実行し、73.091秒、21 calls、入力62,136 tokens、出力4,128 tokensで成功した。文書抽出、A回答、理由と適用範囲の聞き取り、補足承認、B回答、フィードバック、C回答まで完了し、A/B/Cはいずれも`search_knowledge`→`get_context`→`read_evidence`を実行した。最終版はv3、知識件数は13、比較記録はA/B/Cを保持した。別モデル、自動再送、固定回答は使用していない。
+### 安全停止を確認したケース
 
-v5 fullの実API処理は成功したが、スライド用の実ブラウザ画面はまだ撮影していない。
+新しい会話で一般的な質問を行った後、同じ会話の次ターンで比較用の条件へ変更したケースでは、1回validation_top_candidate_missingとなり安全停止した。代替回答、自動修復、自動再送は行われなかった。
 
-- 文書抽出結果
-- 本人役との対話差分
-- 根拠付き複数ターン相談
-- A/B比較
-- 承認後のC
+参加者ガイドの承認後確認は、新しい会話の最初から比較と同じ条件を入力する手順とし、その経路では知識項目13 v3と追加原文の取得に成功した。曖昧な条件追加やLLM出力の揺れにより検証エラーとなる可能性は、既知の制約として残る。
 
-初期検索画面はAppTestで機能確認済み。ローカルPlaywrightでの撮影は、対応するChromium実体が未導入だったため完了せず、成功画像は作成していない。liveリハーサル時に秘密値を画面・URL・ログへ出さず、各実行IDと設定を確認して撮影する。
+## Streamlit Community Cloud
+
+公開URL：<https://wg4-demo-kato.streamlit.app/>
+
+過去の公開環境では、Secrets設定後の参加者ログインと、上限調整後の基本相談成功を運営者が確認している。現行branchのprompt v15、理由不足表示、比較失敗後の明示的再実行UI、参加者資料はまだpush・再デプロイしていない。
+
+したがって、現行branchについて次は未確認である。
+
+- Cloud上の文書抽出からA/B/Cまでの全経路
+- Cloud上の複数ブラウザworkspace分離
+- Cloud上の30セッション実API同時利用
+- 現行commitの公開URLへの反映
 
 ## 既知の制約
 
-- 決定的検索はbigramと小規模語彙規則であり、意味検索ではない
-- 会話の仮定・訂正・設備切替は明示語に基づく。曖昧な発言は確認が必要
-- SQLite単一プロセス前提で、Cloud再起動をまたぐ完遂・永続性・複数replicaを保証しない
-- 現行コードのv5 full実APIは1回成功したが、同一revisionでの複数回再現性、Cloud環境、約30人の実API同時利用は未確認
-- AppTest・mock成功をCloud公開成功、実API品質、実務上の安全性として扱わない
+- 決定的検索はbigramと小規模語彙規則で、意味検索ではない。
+- 会話の仮定、訂正、設備切替は明示語に基づく。曖昧な発言は確認または安全な検証エラーになる場合がある。
+- SQLite単一プロセス前提で、Cloud再起動をまたぐ永続性や複数replicaを保証しない。
+- LLMの文言は実行ごとに変わり得るため、文章一致ではなく版、fact、原文、ツール実行を確認する。
+- AppTestやmock成功を、Cloud公開成功、実API品質、実務上の安全性として扱わない。
+- 初期知識と追加事例は架空教材であり、工学的妥当性や実設備での安全性を証明しない。

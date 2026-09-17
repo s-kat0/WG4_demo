@@ -1149,12 +1149,18 @@ wg4-knowledge-demo/
     preflight.py
     run_load_test.py
   docs/
+    README.md               # 対象読者別の資料索引
+    participant_guide.md    # 参加者への配布用
+    demo_quick_guide.md     # 登壇中の簡易進行
+    demo_script_v5.md       # 詳細リハーサル
+    demo_script.md          # 旧リンク向け互換案内
     deployment.md
     operator_runbook.md
-    demo_script.md
     validation_report.md
     failure_matrix.md
     load_test_report.md
+    acceptance_tests_v5.md
+    seed_catalog_v5.md
     sources.md
   runtime/                 # 実行時生成、Git管理外
 ```
